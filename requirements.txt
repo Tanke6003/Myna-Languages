@@ -1,0 +1,11 @@
+# Backend FastAPI + servicios locales
+faster-whisper>=1.2
+fastapi>=0.110
+uvicorn>=0.27
+python-multipart>=0.0.9
+edge-tts>=7
+ollama>=0.6
+cmudict>=1.0
+psutil>=5.9
+# Opcional: voz offline de Windows si no hay internet para edge-tts
+pyttsx3>=2.90

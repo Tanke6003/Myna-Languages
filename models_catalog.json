@@ -1,0 +1,10 @@
+[
+  { "name": "qwen2.5:3b",       "gb": 3,  "label": "Rápido",                      "family": "qwen" },
+  { "name": "qwen2.5:7b",       "gb": 5,  "label": "Equilibrado",                 "family": "qwen" },
+  { "name": "qwen2.5:14b",      "gb": 9,  "label": "Calidad alta",                "family": "qwen" },
+  { "name": "qwen2.5:32b",      "gb": 20, "label": "Máxima calidad",              "family": "qwen" },
+  { "name": "deepseek-r1:1.5b", "gb": 2,  "label": "Razonamiento mini (muy ligero)", "family": "deepseek" },
+  { "name": "deepseek-r1:7b",   "gb": 5,  "label": "Razonamiento (lento)",        "family": "deepseek" },
+  { "name": "deepseek-r1:14b",  "gb": 9,  "label": "Razonamiento+ (lento)",       "family": "deepseek" },
+  { "name": "deepseek-r1:32b",  "gb": 20, "label": "Razonamiento máx (lento)",    "family": "deepseek" }
+]

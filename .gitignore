@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Frontend (Node)
+frontend/node_modules/
+frontend/dist/
+
+# Datos / generados en tiempo de ejecución
+_audio_cache/
+tutor.db
+tutor.log*
+selected_model.txt
+selected_whisper.txt
+
+# Artefactos de empaquetado / instalador
+dist_package/
+dist_installer/

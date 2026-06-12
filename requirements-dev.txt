@@ -1,0 +1,9 @@
+# Dependencias solo para desarrollo (no se incluyen en el paquete distribuible).
+# Instalar:  .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+# Ejecutar tests:  .venv\Scripts\python.exe -m pytest
+pytest>=8.0
+
+# Generación de iconos (packaging/make_icons.py): SVG -> .ico/.png
+svglib>=1.5
+reportlab>=4.0
+pillow>=10.0

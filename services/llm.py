@@ -25,9 +25,17 @@ def _strip_think(text):
     return _THINK_RE.sub("", text or "").strip()
 
 
+def _device_options(options):
+    """Si el usuario forzó CPU en Ajustes, le decimos a Ollama que no use GPU."""
+    if runtime.get_device() == "cpu":
+        options["num_gpu"] = 0
+    return options
+
+
 def _chat(messages, temperature=0.7, num_predict=None):
     options = {"temperature": temperature}
     options["num_predict"] = num_predict or OLLAMA_NUM_PREDICT
+    _device_options(options)
     kwargs = {
         "model": runtime.get_model(),  # modelo activo (configurable en runtime)
         "messages": messages,
@@ -136,7 +144,7 @@ def conversation_turn(history_msgs, user_text, level, scenario=""):
 def conversation_turn_stream(history_msgs, user_text, level, scenario=""):
     """Generador que produce el texto del modelo token a token (para SSE)."""
     messages = _conv_messages(history_msgs, user_text, level, scenario)
-    options = {"temperature": 0.7, "num_predict": OLLAMA_NUM_PREDICT}
+    options = _device_options({"temperature": 0.7, "num_predict": OLLAMA_NUM_PREDICT})
     kwargs = {"model": runtime.get_model(), "messages": messages, "options": options,
               "keep_alive": OLLAMA_KEEP_ALIVE, "stream": True}
     try:
@@ -168,16 +176,33 @@ def opening_question(level, scenario=""):
 # ----------------------------------------------------------------------------
 # 2) EJERCICIO DE LECTURA / PRONUNCIACIÓN
 # ----------------------------------------------------------------------------
-# Calibración de dificultad por nivel CEFR (apuntando al extremo alto del nivel)
-_CEFR_READING = {
-    "A1": "6-8 words, simple present, very high-frequency words",
-    "A2": "9-12 words, everyday topics, common past or future tense",
-    "B1": "13-16 words, including a subordinate clause and some less common vocabulary",
-    "B2": "16-20 words, complex structure and varied, precise vocabulary",
-    "C1": "20-25 words, sophisticated structures and idiomatic, low-frequency vocabulary",
-    "C2": "22-28 words, near-native: nuanced, idiomatic and stylistically rich",
+# Calibración de dificultad por nivel CEFR. Cada descriptor marca tanto el suelo
+# (no trivial) como el TECHO del nivel (qué NO usar), para que el modelo no se pase
+# (p. ej. dar una frase C1 cuando pediste B1).
+_CEFR_GUIDE = {
+    "A1": "8-10 words. Present simple only, the ~1000 most frequent words, concrete everyday topics. "
+          "AVOID past/perfect/conditional tenses, subordinate clauses, and any abstract or technical word.",
+    "A2": "10-13 words. Simple past and 'going to' future, basic connectors (and, but, because), "
+          "everyday concrete topics. AVOID perfect/conditional tenses and low-frequency or technical vocabulary.",
+    "B1": "12-16 words. At most one subordinate clause; present perfect and simple conditionals are OK. "
+          "Use common, everyday vocabulary. AVOID academic/technical terms, low-frequency words and heavy "
+          "noun phrases or nominalizations (e.g. 'the discovery of X greatly expands our understanding of Y' "
+          "is B2/C1, NOT B1).",
+    "B2": "16-20 words. Complex sentences, passive voice, a good range of connectors, more abstract topics, "
+          "precise but still general vocabulary. AVOID rare, literary or highly specialized terms.",
+    "C1": "18-24 words. Sophisticated structures, idiomatic and lower-frequency vocabulary, abstract and "
+          "nuanced ideas.",
+    "C2": "20-28 words. Near-native: nuanced, idiomatic, stylistically rich and precise.",
 }
 _CEFR_ERRORS = {"A1": "1", "A2": "1-2", "B1": "2-3", "B2": "3", "C1": "3-4", "C2": "4"}
+
+
+def _cefr_guide(level):
+    """Instrucción de calibración: apunta a la parte ALTA del nivel sin SOBREPASARLO."""
+    g = _CEFR_GUIDE.get(level, _CEFR_GUIDE["B2"])
+    return (f"Target CEFR level {level} precisely: {g} "
+            f"Stay WITHIN {level}: do not exceed it (no vocabulary or grammar above {level}) and do not "
+            f"trivialize it (aim for the upper part of {level}, not the lower).")
 
 # Temas para dar variedad (evita que se repitan siempre las mismas frases)
 _THEMES = ["travel", "food", "work", "family", "technology", "sports", "weather", "shopping",
@@ -192,17 +217,15 @@ def _theme(topic):
 
 def reading_sentence(level, topic=""):
     """Genera una frase en inglés para leer en voz alta, calibrada al nivel CEFR."""
-    diff = _CEFR_READING.get(level, _CEFR_READING["B2"])
     theme = _theme(topic)
     messages = [
-        {"role": "system", "content": "You generate ONE English sentence for a learner to read "
-                                       f"aloud, calibrated to CEFR level {level}: make it {diff}. "
-                                       f"The topic is {theme}. Aim for the HARDER end of the level — "
-                                       "never make it easier than the level. Be creative and avoid "
-                                       "clichés. Reply with ONLY the sentence, no quotes."},
+        {"role": "system", "content": "You generate ONE English sentence for a learner to read aloud. "
+                                       + _cefr_guide(level) +
+                                       f" The topic is {theme}. Be creative and avoid clichés. "
+                                       "Reply with ONLY the sentence, no quotes."},
         {"role": "user", "content": f"Give me a {level} sentence about {theme}."},
     ]
-    return _chat(messages, temperature=1.0, num_predict=80).strip().strip('"')
+    return _chat(messages, temperature=0.9, num_predict=80).strip().strip('"')
 
 
 def reading_feedback(reference, heard, problem_words, score, level):
@@ -239,13 +262,12 @@ def text_with_errors(level):
     n = _CEFR_ERRORS.get(level, "3")
     theme = _theme("")
     messages = [
-        {"role": "system", "content": f"Write ONE English sentence about {theme} at CEFR level "
-                                       f"{level} that contains exactly {n} deliberate, realistic "
-                                       "mistakes (verb tense, agreement, articles, prepositions, "
-                                       "word order or collocations). At higher levels the mistakes "
-                                       "must be SUBTLE, not obvious. Use vocabulary and structures "
-                                       f"true to the level — do not make it easier than {level}. "
-                                       "Be varied. Reply with ONLY the incorrect sentence, no quotes."},
+        {"role": "system", "content": f"Write ONE English sentence about {theme} that contains exactly "
+                                       f"{n} deliberate, realistic mistakes (verb tense, agreement, "
+                                       "articles, prepositions, word order or collocations). At higher "
+                                       "levels the mistakes must be SUBTLE, not obvious. "
+                                       + _cefr_guide(level) +
+                                       " Be varied. Reply with ONLY the incorrect sentence, no quotes."},
         {"role": "user", "content": f"Give me a {level} sentence about {theme} with mistakes."},
     ]
     return _chat(messages, temperature=1.0, num_predict=80).strip().strip('"')
@@ -342,8 +364,7 @@ def vocab_exercise(level, kind):
     """Genera un ejercicio de vocabulario de opción múltiple del tipo indicado."""
     s = _VOCAB_SPECS.get(kind, _VOCAB_SPECS["synonym"])
     system = (
-        f"{s['intro']} calibrated to CEFR level {level}; make it genuinely challenging for that "
-        "level (non-obvious, plausible distractors), not trivial. "
+        f"{s['intro']} {_cefr_guide(level)} Make the distractors non-obvious and plausible. "
         "Reply using EXACTLY this format, no quotes, no extra text:\n"
         f"PROMPT: {s['prompt']}\n"
         f"QUESTION: {s['question']}\n"
@@ -394,8 +415,8 @@ def meaning_exercise(word):
 def listening_exercise(level):
     """Genera un pasaje corto en inglés (para escuchar) y una pregunta de comprensión."""
     system = (
-        f"Create a short English listening-comprehension exercise calibrated to CEFR level {level}; "
-        "make it genuinely at that level, not trivial. "
+        "Create a short English listening-comprehension exercise. "
+        f"{_cefr_guide(level)} The passage and question must match that level. "
         "Reply using EXACTLY this format, no quotes, no extra text:\n"
         "PASSAGE: <2-3 natural English sentences to be read aloud>\n"
         "QUESTION: <one comprehension question in English about the passage>\n"

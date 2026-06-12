@@ -18,7 +18,7 @@ Pop-Location
 
 Write-Host "Copiando archivos..."
 $items = @('backend', 'services', 'config.py', 'requirements.txt',
-           'install.ps1', 'run.ps1', 'Instalar.bat', 'Abrir Myna.bat',
+           'install.ps1', 'run.ps1', 'Myna.vbs', 'Instalar.bat', 'Abrir Myna.bat',
            'install.sh', 'run.sh', 'README.md', 'myna.ico')
 foreach ($i in $items) { Copy-Item $i -Destination $stage -Recurse -Force }
 New-Item -ItemType Directory -Force "$stage\frontend" | Out-Null

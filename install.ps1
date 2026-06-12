@@ -24,8 +24,10 @@ if ($hasNvidia) {
   $model = "qwen2.5:7b"; $why = "GPU AMD/Radeon -> 7B (Ollama puede usarla; Whisper ira por CPU)"
 } elseif ($ramGB -ge 16) {
   $model = "qwen2.5:7b"; $why = "16+ GB RAM -> 7B (por CPU, mejor calidad)"
+} elseif ($ramGB -ge 10) {
+  $model = "qwen2.5:3b"; $why = "RAM media -> 3B (rapido y ligero)"
 } else {
-  $model = "qwen2.5:3b"; $why = "RAM limitada -> 3B (rapido y ligero)"
+  $model = "qwen2.5:1.5b"; $why = "CPU/RAM modesta -> 1.5B (muy ligero; cambia a 3B en Ajustes si va bien)"
 }
 Write-Host "Modelo recomendado: $model  ($why)" -ForegroundColor Yellow
 
@@ -66,15 +68,17 @@ if (-not $ready) { Write-Host "Ollama no respondio; abrelo manualmente y reinten
 # --- 6) Descargar el modelo elegido ---
 Write-Host "Descargando el modelo $model (puede tardar varios minutos)..."
 ollama pull $model
-Set-Content -Path ".\selected_model.txt" -Value $model -Encoding utf8
+# Sin BOM: Set-Content -Encoding utf8 en PS 5.1 mete BOM y rompe el nombre del modelo en Python.
+[System.IO.File]::WriteAllText((Join-Path $PSScriptRoot 'selected_model.txt'), $model)
 
 # --- 7) Acceso directo en el escritorio ---
 $ws = New-Object -ComObject WScript.Shell
 $lnk = $ws.CreateShortcut("$([Environment]::GetFolderPath('Desktop'))\Myna.lnk")
-$lnk.TargetPath = "powershell.exe"
-$lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSScriptRoot\run.ps1`""
+# wscript + Myna.vbs => arranca sin ventana de terminal
+$lnk.TargetPath = "wscript.exe"
+$lnk.Arguments = "`"$PSScriptRoot\Myna.vbs`""
 $lnk.WorkingDirectory = $PSScriptRoot
-$lnk.IconLocation = if (Test-Path "$PSScriptRoot\myna.ico") { "$PSScriptRoot\myna.ico" } else { "powershell.exe" }
+$lnk.IconLocation = if (Test-Path "$PSScriptRoot\myna.ico") { "$PSScriptRoot\myna.ico" } else { "wscript.exe" }
 $lnk.Save()
 
 Write-Host ""

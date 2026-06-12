@@ -131,3 +131,51 @@ La lista de modelos sugeridos en **Ajustes** se puede actualizar **sin tocar có
 - Desde Ajustes puedes **instalar** (con barra de progreso) y **desinstalar** modelos, y cambiar
   el activo al instante.
 
+## 🧪 Modelos de IA probados
+
+Pruebas hechas en este equipo para orientar la elección. **No** son benchmarks formales: una sola
+tarea representativa del tutor y una valoración de calidad subjetiva.
+
+**Equipo de prueba:** AMD Ryzen 7 3700X (8 núcleos / 16 hilos @ 4.2 GHz) · 32 GB RAM ·
+NVIDIA RTX 5060 Ti (8 GB VRAM) · Windows 11 · Whisper `medium.en` en CUDA · Ollama (cuantización Q4).
+
+**Tarea:** un turno de conversación en **B1** corrigiendo una frase con 2 errores claros
+(*"Yesterday I go to the park and I eat a sandwich with my friends."*) más generar una frase de
+lectura. Latencia **en caliente** (modelo ya cargado). Probado en **GPU** y forzando **CPU**
+(`num_gpu=0`), con presupuesto amplio (rienda suelta).
+
+### 🟢 En GPU — NVIDIA RTX 5060 Ti (8 GB VRAM)
+
+| Modelo | Tamaño (Q4) | Latencia | Calidad | Notas |
+|---|---|---|---|---|
+| qwen2.5:0.5b | ~0.4 GB | 0.5 s | ★★☆☆☆ | Ultrarrápido pero apenas corrige (repite la frase). |
+| qwen2.5:1.5b | ~1.0 GB | 0.6 s | ★★☆☆☆ | Rápido; correcciones confusas, se enrolla. |
+| qwen2.5:3b | ~1.9 GB | 0.7 s | ★★★☆☆ | Gran relación calidad/velocidad. |
+| **qwen2.5:7b** ⭐ | ~4.7 GB | 1.9 s | ★★★★★ | **El mejor:** capta ambos errores, formato limpio. |
+| deepseek-llm:7b | ~4.7 GB | 2.4 s | ★★★☆☆ | DeepSeek *chat*. Rápido pero corrige peor. |
+| gemma4 | ~9.6 GB | 3.1 s | ★★★☆☆ | Se le escapó un error; enorme, sin ventaja. |
+| qwen3.5:9b | ~6.6 GB | 20.2 s | ★★☆☆☆ | No cabe en 8 GB → offload a RAM → lento. |
+| qwen2.5:32b | ~20 GB | ✗ | — | **No arranca**: crash de CUDA (20 GB no caben en 8 GB). Solo CPU. |
+
+### 🔵 En CPU — AMD Ryzen 7 3700X (8 núcleos / 16 hilos)
+
+| Modelo | Tamaño (Q4) | Latencia | Calidad | Notas |
+|---|---|---|---|---|
+| qwen2.5:0.5b | ~0.4 GB | 1.8 s | ★★☆☆☆ | El más ligero; va bien hasta en CPU muy modesta. |
+| qwen2.5:1.5b | ~1.0 GB | 4.7 s | ★★☆☆☆ | Aceptable en CPU justa. |
+| deepseek-llm:7b | ~4.7 GB | 5.1 s | ★★★☆☆ | Sorprendentemente ligero en CPU. |
+| qwen2.5:3b | ~1.9 GB | 5.7 s | ★★★☆☆ | Buen equilibrio en CPU. |
+| **qwen2.5:7b** ⭐ | ~4.7 GB | 11.7 s | ★★★★★ | Mejor calidad práctica; ya se nota en CPU. |
+| qwen2.5:32b | ~20 GB | 69.7 s | ★★★★★ | **Máxima calidad** (capta ambos errores) pero **~70 s/respuesta**. No práctico. |
+| gemma4 | ~9.6 GB | 73.6 s | ★★★☆☆ | Muy lento en CPU. |
+| qwen3.5:9b | ~6.6 GB | 125 s | ★★☆☆☆ | Lentísimo en CPU (~2 min/respuesta). |
+
+> `✗` = no arranca · *Latencia = en caliente, modelo ya cargado.*
+
+### ¿GPU o CPU?
+- **Si el modelo CABE en la VRAM (≤ ~4.7 GB → hasta 7b):** la **GPU gana claro** — p. ej. `qwen2.5:7b` va **1.9 s en GPU vs 11.7 s en CPU** (~6× más rápido).
+- **Si NO cabe (> 8 GB):** la GPU descarga a RAM y **deja de ayudar** (`qwen3.5:9b`: 20 s GPU). Y si es **mucho** más grande que la VRAM (`qwen2.5:32b`, 20 GB), **ni siquiera arranca en GPU** (crash) → toca CPU, donde tarda ~70 s por respuesta.
+- **Regla práctica:** usa GPU siempre que el modelo entre en tu VRAM; si no entra, **baja de tamaño** en vez de sufrir el offload (o el crash). En **Ajustes** puedes alternar **GPU/CPU** (por defecto GPU).
+
+**Veredicto de modelo:** con GPU → `qwen2.5:7b`. En CPU → `qwen2.5:3b` (o `1.5b`/`0.5b` si el equipo va muy justo). Como alternativa de DeepSeek (chat, no razonamiento) está `deepseek-llm:7b`.
+

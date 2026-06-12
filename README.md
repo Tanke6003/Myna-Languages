@@ -1,7 +1,19 @@
-# 🐦 Myna — tu tutor de idiomas (local)
+<p align="center">
+  <img src="frontend/public/myna_wordmark.svg" alt="Myna" width="360" />
+</p>
 
-> *Myna*: el ave que aprende a imitar el habla humana. La app te ayuda a **imitar,
-> repetir y sonar nativo**.
+<p align="center">
+  <b>Tu tutor de idiomas — 100% en tu PC.</b><br/>
+  <em>Myna: el ave que aprende a imitar el habla. Imita, repite y suena nativo.</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Tanke6003/Myna-Languages/releases/latest">
+    <img src="https://img.shields.io/badge/⬇%20Descargar-Myna%20Setup.exe-0F9D8C?style=for-the-badge" alt="Descargar Myna" />
+  </a>
+</p>
+
+---
 
 App para practicar idiomas (hoy inglés): **conversa por voz**, mejora tu **pronunciación**
 hasta el nivel del **fonema**, haz **ejercicios** de corregir texto, **vocabulario** y un

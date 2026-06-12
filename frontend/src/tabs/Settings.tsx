@@ -86,8 +86,15 @@ export default function Settings() {
           <Button variant="outline" onClick={load}><RefreshCw size={15} />{t('settings.refresh')}</Button>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
+          <div className="flex items-center gap-2 rounded-lg bg-surface2 px-3 py-2 text-sm sm:col-span-2">
+            <span className="text-accent"><Cpu size={16} /></span>
+            <span className="font-bold">CPU</span>
+            <span className="ml-auto truncate text-muted" title={info.cpu_name}>
+              {info.cpu_name ? `${info.cpu_name} · ` : ''}{info.cpu_cores}c/{info.cpu_threads}t
+              {info.cpu_ghz ? ` @ ${info.cpu_ghz} GHz` : ''}
+            </span>
+          </div>
           <Row icon={<MemoryStick size={16} />} label="RAM" value={`${info.ram_gb} GB`} />
-          <Row icon={<Cpu size={16} />} label="CPU" value={`${info.cpu_cores}c · ${info.cpu_threads}t`} />
           <Row icon={<Monitor size={16} />} label={t('settings.gpu')} value={gpuValue} />
           {info.vram_gb > 0 && <Row icon={<Monitor size={16} />} label={t('settings.vram')} value={`${info.vram_gb} GB`} />}
           <Row icon={<Mic size={16} />} label={t('settings.whisper')} value={info.whisper_device.toUpperCase()} />

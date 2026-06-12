@@ -9,25 +9,34 @@ function Refresh-Path {
               [System.Environment]::GetEnvironmentVariable('Path', 'User')
 }
 
-# --- 1) Detectar hardware ---
+# --- 1) Detectar hardware (RAM, GPU y CPU: nucleos + frecuencia) ---
 $ramGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
 $gpus = Get-CimInstance Win32_VideoController
 $hasNvidia = [bool]($gpus | Where-Object { $_.Name -match 'NVIDIA' })
 $hasAmd = [bool]($gpus | Where-Object { $_.Name -match 'AMD|Radeon' })
-Write-Host ("Hardware: {0} GB RAM | NVIDIA: {1} | AMD/Radeon: {2}" -f `
-  $ramGB, (@('No', 'Si')[[int]$hasNvidia]), (@('No', 'Si')[[int]$hasAmd]))
+$cpu = Get-CimInstance Win32_Processor
+$cores = ($cpu | Measure-Object -Property NumberOfCores -Sum).Sum
+if (-not $cores) { $cores = [int]$env:NUMBER_OF_PROCESSORS }
+$ghz = [math]::Round((($cpu | Measure-Object -Property MaxClockSpeed -Maximum).Maximum) / 1000, 1)
+Write-Host ("Hardware: {0} GB RAM | CPU: {1} nucleos @ {2} GHz | NVIDIA: {3} | AMD/Radeon: {4}" -f `
+  $ramGB, $cores, $ghz, (@('No', 'Si')[[int]$hasNvidia]), (@('No', 'Si')[[int]$hasAmd]))
 
 # --- 2) Elegir modelo de Ollama ---
+# Con GPU manda esta; sin ella, el limite real lo ponen los nucleos+GHz del CPU, acotado por la RAM.
 if ($hasNvidia) {
   $model = "qwen2.5:7b"; $why = "GPU NVIDIA -> 7B (acelerado por GPU; Whisper tambien)"
 } elseif ($hasAmd -and $ramGB -ge 12) {
   $model = "qwen2.5:7b"; $why = "GPU AMD/Radeon -> 7B (Ollama puede usarla; Whisper ira por CPU)"
-} elseif ($ramGB -ge 16) {
-  $model = "qwen2.5:7b"; $why = "16+ GB RAM -> 7B (por CPU, mejor calidad)"
-} elseif ($ramGB -ge 10) {
-  $model = "qwen2.5:3b"; $why = "RAM media -> 3B (rapido y ligero)"
+} elseif ($cores -ge 8 -and $ramGB -ge 8) {
+  $model = "qwen2.5:7b"; $why = "CPU potente ($cores nucleos) -> 7B"
+} elseif ($cores -ge 6 -and $ghz -ge 3.0 -and $ramGB -ge 8) {
+  $model = "qwen2.5:7b"; $why = "CPU rapido ($cores nucleos @ $ghz GHz) -> 7B"
+} elseif ($cores -ge 4 -and $ramGB -ge 6) {
+  $model = "qwen2.5:3b"; $why = "CPU medio ($cores nucleos) -> 3B"
+} elseif ($cores -ge 2) {
+  $model = "qwen2.5:1.5b"; $why = "CPU modesto ($cores nucleos @ $ghz GHz) -> 1.5B"
 } else {
-  $model = "qwen2.5:1.5b"; $why = "CPU/RAM modesta -> 1.5B (muy ligero; cambia a 3B en Ajustes si va bien)"
+  $model = "qwen2.5:0.5b"; $why = "CPU muy limitado -> 0.5B"
 }
 Write-Host "Modelo recomendado: $model  ($why)" -ForegroundColor Yellow
 

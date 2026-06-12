@@ -47,6 +47,8 @@ export interface SystemInfo {
   ram_gb: number
   cpu_cores: number
   cpu_threads: number
+  cpu_name: string
+  cpu_ghz: number
   gpu: { nvidia: boolean; count: number; name: string }
   vram_gb: number
   budget_gb: number

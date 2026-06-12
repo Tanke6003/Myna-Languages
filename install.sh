@@ -5,19 +5,25 @@ set -e
 cd "$(dirname "$0")"
 echo "===== Instalador - Myna (Linux) ====="
 
-# --- 1) Hardware ---
+# --- 1) Hardware (RAM, GPU y CPU: nucleos + frecuencia) ---
 RAM_GB=$(free -g 2>/dev/null | awk '/^Mem:/{print $2}')
 [ -z "$RAM_GB" ] && RAM_GB=8
 if command -v nvidia-smi >/dev/null 2>&1; then HAS_NVIDIA=1; else HAS_NVIDIA=0; fi
 if lspci 2>/dev/null | grep -iE 'vga|3d|display' | grep -iq 'amd\|radeon'; then HAS_AMD=1; else HAS_AMD=0; fi
-echo "RAM: ${RAM_GB} GB | NVIDIA: $HAS_NVIDIA | AMD: $HAS_AMD"
+CORES=$(awk -F: '/^cpu cores/{print $2; exit}' /proc/cpuinfo 2>/dev/null | tr -d ' ')
+[ -z "$CORES" ] && CORES=$(nproc 2>/dev/null || echo 2)
+GHZ=$(awk -F: '/cpu MHz/{print $2; exit}' /proc/cpuinfo 2>/dev/null | awk '{printf "%.0f", $1}')
+[ -z "$GHZ" ] && GHZ=0
+echo "RAM: ${RAM_GB} GB | CPU: ${CORES} nucleos (~${GHZ} MHz) | NVIDIA: $HAS_NVIDIA | AMD: $HAS_AMD"
 
-# --- 2) Modelo segun hardware ---
+# --- 2) Modelo segun hardware (sin GPU, manda el CPU: nucleos + GHz) ---
 if [ "$HAS_NVIDIA" = "1" ]; then MODEL="qwen2.5:7b"
 elif [ "$HAS_AMD" = "1" ] && [ "$RAM_GB" -ge 12 ]; then MODEL="qwen2.5:7b"
-elif [ "$RAM_GB" -ge 16 ]; then MODEL="qwen2.5:7b"
-elif [ "$RAM_GB" -ge 10 ]; then MODEL="qwen2.5:3b"
-else MODEL="qwen2.5:1.5b"; fi
+elif [ "$CORES" -ge 8 ] && [ "$RAM_GB" -ge 8 ]; then MODEL="qwen2.5:7b"
+elif [ "$CORES" -ge 6 ] && [ "$GHZ" -ge 3000 ] && [ "$RAM_GB" -ge 8 ]; then MODEL="qwen2.5:7b"
+elif [ "$CORES" -ge 4 ] && [ "$RAM_GB" -ge 6 ]; then MODEL="qwen2.5:3b"
+elif [ "$CORES" -ge 2 ]; then MODEL="qwen2.5:1.5b"
+else MODEL="qwen2.5:0.5b"; fi
 echo "Modelo elegido: $MODEL"
 
 # --- 3) Python venv + dependencias ---

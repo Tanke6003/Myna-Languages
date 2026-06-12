@@ -2,6 +2,7 @@
 import json
 import os
 
+import httpx
 from fastapi import APIRouter, Body, Form, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -36,10 +37,58 @@ def _gpu_vram_gb():
     return 0
 
 
+def _cpu_info():
+    """(nombre, GHz) del CPU — best-effort multiplataforma."""
+    name, ghz = "", 0.0
+    try:
+        import psutil
+        f = psutil.cpu_freq()
+        if f and (f.max or f.current):
+            ghz = round((f.max or f.current) / 1000, 1)
+    except Exception:
+        pass
+    try:
+        import platform
+        sysname = platform.system()
+        if sysname == "Windows":
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as k:
+                name = winreg.QueryValueEx(k, "ProcessorNameString")[0].strip()
+                if not ghz:
+                    ghz = round(winreg.QueryValueEx(k, "~MHz")[0] / 1000, 1)
+        elif sysname == "Linux":
+            with open("/proc/cpuinfo", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.lower().startswith("model name"):
+                        name = line.split(":", 1)[1].strip()
+                        break
+        if not name:
+            name = platform.processor()
+    except Exception:
+        pass
+    return name, ghz
+
+
+def _cpu_cap_gb(cores, ghz):
+    """Tope razonable de tamaño de modelo cuando se corre SOLO en CPU (sin GPU).
+    La inferencia en CPU depende sobre todo de núcleos físicos y frecuencia."""
+    if cores >= 8:
+        return 5                                   # 7B va bien
+    if cores >= 6:
+        return 5 if ghz >= 3.0 else 3
+    if cores >= 4:
+        return 3 if ghz >= 2.4 else 2              # 3B / 1.5B
+    if cores >= 2:
+        return 2 if ghz >= 2.2 else 1              # 1.5B / 0.5B
+    return 1                                        # 0.5B
+
+
 def _available_models():
     try:
         import ollama
-        data = ollama.list()
+        # Timeout corto: si el daemon está ocupado, /system no se cuelga (devuelve []).
+        data = ollama.Client(timeout=httpx.Timeout(5.0, connect=3.0)).list()
         models = getattr(data, "models", None)
         if models is None and isinstance(data, dict):
             models = data.get("models", [])
@@ -101,22 +150,47 @@ def _get_catalog():
     return MODEL_CATALOG
 
 
+_HW_CACHE = None
+
+
+def _hardware():
+    """Hardware fijo de la máquina (RAM, CPU, GPU). Se calcula UNA vez por proceso:
+    nvidia-smi y el registro son caros y no cambian en caliente."""
+    global _HW_CACHE
+    if _HW_CACHE is None:
+        import psutil
+        cuda = 0
+        try:
+            import ctranslate2
+            cuda = ctranslate2.get_cuda_device_count()
+        except Exception:
+            pass
+        cpu_name, cpu_ghz = _cpu_info()
+        _HW_CACHE = {
+            "ram_gb": round(psutil.virtual_memory().total / (1024 ** 3), 1),
+            "cores": psutil.cpu_count(logical=False) or psutil.cpu_count() or 0,
+            "threads": psutil.cpu_count(logical=True) or 0,
+            "cpu_name": cpu_name,
+            "cpu_ghz": cpu_ghz,
+            "cuda": cuda,
+            "vram": _gpu_vram_gb(),
+            "gpu_name": _gpu_name() if cuda else "",
+        }
+    return _HW_CACHE
+
+
 @router.get("/system")
 def system_info():
-    import psutil
-    ram_gb = round(psutil.virtual_memory().total / (1024 ** 3), 1)
-    cores = psutil.cpu_count(logical=False) or psutil.cpu_count() or 0
-    threads = psutil.cpu_count(logical=True) or 0
-    cuda = 0
-    try:
-        import ctranslate2
-        cuda = ctranslate2.get_cuda_device_count()
-    except Exception:
-        pass
-    device = stt.active_device()
-    vram = _gpu_vram_gb()
-    budget = (vram - 2) if vram > 0 else max(ram_gb - 4, 2)
-    avail = set(_available_models())
+    hw = _hardware()
+    ram_gb, cores, vram = hw["ram_gb"], hw["cores"], hw["vram"]
+    # Con GPU NVIDIA manda la VRAM. Sin ella, el límite real lo pone el CPU (núcleos+GHz),
+    # acotado además por la RAM disponible.
+    if vram > 0:
+        budget = vram - 2
+    else:
+        budget = min(max(ram_gb - 4, 2), _cpu_cap_gb(cores, hw["cpu_ghz"]))
+    avail_list = _available_models()          # una sola llamada a Ollama
+    avail = set(avail_list)
     cat = _get_catalog()
     catalog = [{**m, "fits": m.get("gb", 0) <= budget, "installed": m.get("name") in avail} for m in cat]
     fitting = [m for m in cat if m.get("gb", 0) <= budget]
@@ -127,13 +201,15 @@ def system_info():
         "vram_gb": vram,
         "budget_gb": round(budget, 1),
         "cpu_cores": cores,
-        "cpu_threads": threads,
-        "gpu": {"nvidia": cuda > 0, "count": cuda, "name": _gpu_name() if cuda else ""},
-        "whisper_device": device,
+        "cpu_threads": hw["threads"],
+        "cpu_name": hw["cpu_name"],
+        "cpu_ghz": hw["cpu_ghz"],
+        "gpu": {"nvidia": hw["cuda"] > 0, "count": hw["cuda"], "name": hw["gpu_name"]},
+        "whisper_device": stt.active_device(),
         "whisper_model": stt.current_model_name(),
         "whisper_sizes": stt.WHISPER_SIZES,
         "current_model": runtime.get_model(),
-        "available_models": _available_models(),
+        "available_models": avail_list,
         "recommended_model": recommended,
         "model_catalog": catalog,
     }

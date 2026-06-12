@@ -59,6 +59,8 @@ export interface SystemInfo {
   available_models: string[]
   recommended_model: string
   model_catalog: CatalogModel[]
+  llm_device: string
+  gpu_available: boolean
 }
 export interface CatalogModel {
   name: string
@@ -155,6 +157,8 @@ export const api = {
     postJSON('/api/settings/model', { model }),
   setWhisper: (model: string): Promise<{ whisper_model: string }> =>
     postJSON('/api/settings/whisper', { model }),
+  setDevice: (device: string): Promise<{ llm_device: string }> =>
+    postJSON('/api/settings/device', { device }),
   deleteModel: (model: string): Promise<{ ok: boolean }> =>
     postJSON('/api/settings/delete', { model }),
   pullModel: async (

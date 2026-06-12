@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { MemoryStick, Cpu, Monitor, Mic, RefreshCw, Check, Download, Star, Trash2 } from 'lucide-react'
 import { api, type SystemInfo } from '../api'
-import { Button, Card, Select, Spinner, useToast } from '../ui'
+import { Button, Card, Segmented, Select, Spinner, useToast } from '../ui'
 import { useI18n } from '../i18n'
 
 function Row({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
@@ -20,6 +20,7 @@ export default function Settings() {
   const [info, setInfo] = useState<SystemInfo | null>(null)
   const [model, setModel] = useState('')
   const [whisper, setWhisper] = useState('')
+  const [device, setDevice] = useState('gpu')
   const [saving, setSaving] = useState(false)
   const [pulling, setPulling] = useState<string | null>(null)
   const [pullPct, setPullPct] = useState<number | null>(null)
@@ -28,7 +29,7 @@ export default function Settings() {
   async function load() {
     try {
       const s = await api.system()
-      setInfo(s); setModel(s.current_model); setWhisper(s.whisper_model)
+      setInfo(s); setModel(s.current_model); setWhisper(s.whisper_model); setDevice(s.llm_device)
     } catch (e: any) { toast(e.message, 'error') }
   }
   useEffect(() => { load() }, [])
@@ -40,6 +41,16 @@ export default function Settings() {
       setModel(r.current_model)
       setInfo((i) => (i ? { ...i, current_model: r.current_model } : i))
       toast(`${t('settings.applied')}: ${r.current_model}`, 'success')
+    } catch (e: any) { toast(e.message, 'error') } finally { setSaving(false) }
+  }
+
+  async function applyDevice(chosen: string) {
+    setSaving(true)
+    try {
+      const r = await api.setDevice(chosen)
+      setDevice(r.llm_device)
+      setInfo((i) => (i ? { ...i, llm_device: r.llm_device } : i))
+      toast(`${t('settings.applied')}: ${r.llm_device.toUpperCase()}`, 'success')
     } catch (e: any) { toast(e.message, 'error') } finally { setSaving(false) }
   }
 
@@ -108,6 +119,14 @@ export default function Settings() {
         <div className="flex flex-wrap items-center gap-2">
           <Select value={model} onChange={setModel} options={installed} className="min-w-44" />
           <Button onClick={() => apply(model)} loading={saving}><Check size={16} />{t('settings.apply')}</Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          <span className="text-sm font-bold">{t('settings.device')}</span>
+          <Segmented options={['GPU', 'CPU']} value={device.toUpperCase()}
+            onChange={(v) => applyDevice(v.toLowerCase())} />
+          <span className="text-xs text-muted">
+            {info.gpu_available ? t('settings.deviceHint') : t('settings.noGpu')}
+          </span>
         </div>
       </Card>
 

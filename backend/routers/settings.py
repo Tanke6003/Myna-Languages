@@ -109,13 +109,10 @@ MODEL_CATALOG = [
     {"name": "qwen2.5:0.5b", "gb": 1, "label": "Ultraligero (mínimo usable)", "family": "qwen"},
     {"name": "qwen2.5:1.5b", "gb": 2, "label": "Muy ligero (CPU modesta)", "family": "qwen"},
     {"name": "qwen2.5:3b", "gb": 3, "label": "Rápido", "family": "qwen"},
-    {"name": "qwen2.5:7b", "gb": 5, "label": "Equilibrado", "family": "qwen"},
+    {"name": "qwen2.5:7b", "gb": 5, "label": "Equilibrado (recomendado)", "family": "qwen"},
     {"name": "qwen2.5:14b", "gb": 9, "label": "Calidad alta", "family": "qwen"},
     {"name": "qwen2.5:32b", "gb": 20, "label": "Máxima calidad", "family": "qwen"},
-    {"name": "deepseek-r1:1.5b", "gb": 2, "label": "Razonamiento mini (muy ligero)", "family": "deepseek"},
-    {"name": "deepseek-r1:7b", "gb": 5, "label": "Razonamiento (lento)", "family": "deepseek"},
-    {"name": "deepseek-r1:14b", "gb": 9, "label": "Razonamiento+ (lento)", "family": "deepseek"},
-    {"name": "deepseek-r1:32b", "gb": 20, "label": "Razonamiento máx (lento)", "family": "deepseek"},
+    {"name": "deepseek-llm:7b", "gb": 5, "label": "Alternativa chat (DeepSeek)", "family": "deepseek"},
 ]
 
 _CATALOG_CACHE = None
@@ -212,6 +209,8 @@ def system_info():
         "available_models": avail_list,
         "recommended_model": recommended,
         "model_catalog": catalog,
+        "llm_device": runtime.get_device(),
+        "gpu_available": hw["cuda"] > 0,
     }
 
 
@@ -222,6 +221,13 @@ def set_active_model(body: dict = Body(...)):
         raise HTTPException(400, "Falta el nombre del modelo.")
     runtime.set_model(name)
     return {"current_model": runtime.get_model()}
+
+
+@router.post("/settings/device")
+def set_llm_device(body: dict = Body(...)):
+    """Cambia el dispositivo del LLM: 'gpu' (usa GPU si puede) o 'cpu' (forzado)."""
+    device = runtime.set_device(body.get("device", "gpu"))
+    return {"llm_device": device}
 
 
 @router.post("/settings/whisper")

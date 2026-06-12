@@ -13,6 +13,7 @@ tutor.db
 tutor.log*
 selected_model.txt
 selected_whisper.txt
+selected_device.txt
 
 # Artefactos de empaquetado / instalador
 dist_package/

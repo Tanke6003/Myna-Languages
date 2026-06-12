@@ -6,10 +6,16 @@ robusto (el modelo no necesita escapar comillas) y más rápido de generar.
 import random
 import re
 
+import httpx
 import ollama
 
 from config import OLLAMA_KEEP_ALIVE, OLLAMA_NUM_PREDICT
 from services import runtime
+
+# Cliente con timeout: si el daemon de Ollama está caído o colgado, fallamos rápido
+# en vez de quedarnos esperando para siempre. connect corto; read amplio (la generación
+# en CPU puede tardar). NO se usa para pull (descarga larga), que va por el cliente normal.
+_client = ollama.Client(timeout=httpx.Timeout(300.0, connect=10.0))
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
@@ -29,9 +35,10 @@ def _chat(messages, temperature=0.7, num_predict=None):
         "keep_alive": OLLAMA_KEEP_ALIVE,  # mantiene el modelo cargado (más rápido)
     }
     try:
-        resp = ollama.chat(think=False, **kwargs)  # qwen3: no "pensar en voz alta"
-    except Exception:
-        resp = ollama.chat(**kwargs)
+        resp = _client.chat(think=False, **kwargs)  # qwen3: no "pensar en voz alta"
+    except TypeError:
+        # Cliente de ollama antiguo sin el parámetro `think`: reintenta sin él.
+        resp = _client.chat(**kwargs)
     return _strip_think(resp["message"]["content"])
 
 
@@ -133,9 +140,9 @@ def conversation_turn_stream(history_msgs, user_text, level, scenario=""):
     kwargs = {"model": runtime.get_model(), "messages": messages, "options": options,
               "keep_alive": OLLAMA_KEEP_ALIVE, "stream": True}
     try:
-        stream = ollama.chat(think=False, **kwargs)
-    except Exception:
-        stream = ollama.chat(**kwargs)
+        stream = _client.chat(think=False, **kwargs)
+    except TypeError:
+        stream = _client.chat(**kwargs)
     for chunk in stream:
         try:
             content = chunk["message"]["content"]

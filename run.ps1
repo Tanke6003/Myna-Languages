@@ -57,6 +57,21 @@ if (-not (Test-Ollama)) {
 
 $url = "http://127.0.0.1:8000"
 
+# --- Evita mostrar una version vieja: si en :8000 ya corre un backend de OTRA version (p. ej.
+#     actualizaste con la app abierta), lo detenemos para que arranque el de ESTA instalacion.
+#     (config.APP_VERSION se fija al iniciar el proceso, asi que un backend viejo reporta lo viejo.) ---
+if (Test-Path ".\VERSION") {
+  $installed = (Get-Content ".\VERSION" -Raw).Trim()
+  $running = $null
+  try { $running = (Invoke-RestMethod "$url/api/system" -TimeoutSec 2).version } catch { }
+  if ($running -and $running -ne $installed) {
+    foreach ($sp in ((Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue).OwningProcess | Select-Object -Unique)) {
+      Stop-Process -Id $sp -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Milliseconds 600
+  }
+}
+
 # --- Arranca el servidor OCULTO (proceso aparte para poder detenerlo al cerrar la app) ---
 $server = Start-Process -PassThru -WindowStyle Hidden -WorkingDirectory $PSScriptRoot `
   -FilePath $py -ArgumentList '-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', '8000'

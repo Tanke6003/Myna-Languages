@@ -27,6 +27,16 @@ fi
 
 URL="http://127.0.0.1:8000"
 
+# --- Evita mostrar una version vieja: si en :8000 corre un backend de OTRA version, lo paramos ---
+if [ -f VERSION ]; then
+  INSTALLED="$(tr -d '[:space:]' < VERSION)"
+  RUNNING="$(curl -s http://127.0.0.1:8000/api/system 2>/dev/null | grep -o '"version"[^,}]*' | head -1 | grep -o '[0-9][0-9.]*')"
+  if [ -n "$RUNNING" ] && [ "$RUNNING" != "$INSTALLED" ]; then
+    pkill -f 'uvicorn backend.main:app' 2>/dev/null || true
+    sleep 0.5
+  fi
+fi
+
 # --- Arranca la API en segundo plano (para poder detenerla al cerrar la ventana) ---
 ./.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 &
 SERVER_PID=$!

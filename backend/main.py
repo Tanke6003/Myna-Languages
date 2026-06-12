@@ -98,8 +98,20 @@ def health():
 
 
 # Sirve el frontend compilado (si existe). Debe ir al final (catch-all).
+class _SPAStatic(StaticFiles):
+    """Como StaticFiles pero SIN cachear el HTML ni el manifest: así, tras actualizar la app,
+    el navegador toma el index nuevo (con el manifest/iconos actuales) en vez de uno cacheado
+    viejo. Los assets JS/CSS llevan hash en el nombre, por eso esos sí se cachean."""
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        ct = resp.headers.get("content-type", "")
+        if ct.startswith("text/html") or path.endswith(".webmanifest"):
+            resp.headers["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
+        return resp
+
+
 _DIST = os.path.join(BASE_DIR, "frontend", "dist")
 if os.path.isdir(_DIST):
-    app.mount("/", StaticFiles(directory=_DIST, html=True), name="spa")
+    app.mount("/", _SPAStatic(directory=_DIST, html=True), name="spa")
 else:
     print(f"[INFO] No hay build del frontend en {_DIST}. Usa Vite en dev (npm run dev).")

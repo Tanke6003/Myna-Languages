@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Ear, Volume2, CheckCircle2, XCircle } from 'lucide-react'
 import { api, type ListeningExercise } from '../api'
-import { Button, Card, Thinking, playTTS, useToast } from '../ui'
+import { Button, Card, Thinking, SpeedControl, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -50,6 +50,7 @@ export default function Listening({ level, award }: TabProps) {
               <Button variant="outline" onClick={() => playTTS(ex.passage, { lang: 'en', slow: true })}>
                 <Volume2 size={16} />{t('btn.slow')}
               </Button>
+              <SpeedControl />
             </>
           )}
         </div>

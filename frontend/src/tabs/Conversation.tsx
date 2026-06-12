@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Play, Send, RotateCcw, Volume2, Pencil, X } from 'lucide-react'
 import { api, type ConversationTurn } from '../api'
-import { Button, Card, MicRecorder, Select, Thinking, playTTS, useToast } from '../ui'
+import { Button, Card, MicRecorder, Select, Thinking, SpeedControl, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -136,6 +136,7 @@ export default function Conversation({ level, scenarios }: TabProps) {
             <Button variant="outline" onClick={() => { setMessages([]); setFb(null) }}>
               <RotateCcw size={16} />{t('conv.reset')}
             </Button>
+            <SpeedControl className="ml-auto" />
           </div>
         </div>
       </Card>

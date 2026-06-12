@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Home, GraduationCap, Sun, Moon, ArrowUp } from 'lucide-react'
 import { api, type AwardMeta, type LevelUp, type Meta, type Stats } from './api'
-import { Button, Scoreboard, Segmented, SpeedControl, useTheme, useToast } from './ui'
+import { Button, Scoreboard, Segmented, useTheme, useToast } from './ui'
 import { useI18n } from './i18n'
 import { MODULES, CATEGORIES, moduleById } from './modules'
 import Onboarding from './Onboarding'
@@ -98,7 +98,6 @@ export default function App() {
           <div className="flex flex-wrap items-center gap-3">
             {meta && <Segmented options={meta.levels} value={level} onChange={setLevel} />}
             <Scoreboard stats={stats} />
-            <SpeedControl />
             <button onClick={() => setLang(lang === 'es' ? 'en' : 'es')} title={t('lang.title')}
               className="flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-surface text-sm font-extrabold hover:bg-surface2">
               {lang === 'es' ? 'EN' : 'ES'}

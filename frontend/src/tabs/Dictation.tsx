@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Headphones, Volume2, CheckCircle2 } from 'lucide-react'
 import { api } from '../api'
-import { Button, Card, Thinking, playTTS, useToast } from '../ui'
+import { Button, Card, Thinking, SpeedControl, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -58,6 +58,7 @@ export default function Dictation({ level, award }: TabProps) {
               <Button variant="outline" onClick={() => playTTS(sentence, { lang: 'en', slow: true })}>
                 <Volume2 size={16} />{t('btn.slow')}
               </Button>
+              <SpeedControl />
             </>
           )}
         </div>

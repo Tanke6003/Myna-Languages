@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Languages, Pencil, RefreshCw, X, Volume2 } from 'lucide-react'
 import { api, type TranslationDetails } from '../api'
-import { Button, Card, Segmented, Thinking, TtsButton, playTTS, useToast } from '../ui'
+import { Button, Card, Segmented, Thinking, TtsButton, SpeedControl, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -58,8 +58,9 @@ export default function Translator(_props: TabProps) {
         {output && (
           <div className="flex flex-col gap-2">
             <div className="rounded-xl bg-surface2 p-4 text-base" translate="no">{output}</div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <TtsButton text={output} label={t('btn.listen')} />
+              <SpeedControl />
               <Button variant="outline" onClick={() => setNoteOpen((v) => !v)}>
                 <Pencil size={16} />{t('btn.dispute')}
               </Button>

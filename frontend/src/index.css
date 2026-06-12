@@ -62,3 +62,22 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 .thinking-fade { animation: thinking-fade .35s ease; }
+
+/* Celebración de medalla: la medalla entra con "pop" y queda con un brillo pulsante. */
+@keyframes medal-pop {
+  0%   { transform: scale(.3) rotate(-14deg); opacity: 0; }
+  60%  { transform: scale(1.12) rotate(5deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+@keyframes medal-glow {
+  0%, 100% { filter: drop-shadow(0 0 8px var(--accent)); }
+  50%      { filter: drop-shadow(0 0 24px var(--accent)); }
+}
+/* Pop de entrada y luego brillo pulsante (en una sola regla: dos clases se pisarían). */
+.animate-medal {
+  animation: medal-pop .6s cubic-bezier(.2,.8,.2,1) both,
+             medal-glow 1.8s ease-in-out .6s infinite;
+}
+/* Entrada del fondo oscuro del overlay */
+@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+.animate-overlay-in { animation: overlay-in .25s ease both; }

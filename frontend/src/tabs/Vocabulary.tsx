@@ -35,7 +35,7 @@ export default function Vocabulary({ level, award }: TabProps) {
     if (!ex || !selected) { toast(t('vocab.pick'), 'error'); return }
     const correct = selected.trim().toLowerCase() === ex.answer.trim().toLowerCase()
     setResult({ correct })
-    await award(correct ? 5 : 0, correct, { kind: 'vocab', level })
+    await award(correct ? 5 : 0, correct, { kind: 'vocab', level, score: correct ? 100 : 0 })
   }
 
   function optClass(o: string) {

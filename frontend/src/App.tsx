@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Home, GraduationCap, Sun, Moon, ArrowUp } from 'lucide-react'
-import { api, type AwardMeta, type LevelUp, type Meta, type Stats } from './api'
+import { Home, GraduationCap, Sun, Moon, ArrowUp, Sparkles } from 'lucide-react'
+import { api, type AwardMeta, type LevelUp, type Meta, type Stats, type Medals } from './api'
+
+const MEDAL_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 import { Button, Scoreboard, Segmented, useTheme, useToast } from './ui'
 import { useI18n } from './i18n'
 import { MODULES, CATEGORIES, moduleById } from './modules'
@@ -35,6 +37,7 @@ export default function App() {
   const [tab, setTab] = useState('home')
   const [progressKey, setProgressKey] = useState(0)
   const [levelup, setLevelup] = useState<LevelUp | null>(null)
+  const [celebrate, setCelebrate] = useState<string | null>(null)
   const [onboard, setOnboard] = useState(() => !localStorage.getItem('onboarded'))
 
   useEffect(() => {
@@ -45,6 +48,23 @@ export default function App() {
   useEffect(() => {
     if (level) api.levelup(level).then(setLevelup).catch(() => {})
   }, [level, progressKey])
+
+  // Medallas: si la medalla más alta sube respecto a la última vista, celebra con animación.
+  useEffect(() => {
+    api.medals().then((m: Medals) => {
+      const stored = localStorage.getItem('myna.medalHighest')
+      if (stored === null) {            // primera vez: inicializa sin celebrar lo ya conseguido
+        localStorage.setItem('myna.medalHighest', m.highest ?? '')
+        return
+      }
+      const newIdx = m.highest ? MEDAL_ORDER.indexOf(m.highest) : -1
+      const oldIdx = stored ? MEDAL_ORDER.indexOf(stored) : -1
+      if (newIdx > oldIdx) {
+        localStorage.setItem('myna.medalHighest', m.highest ?? '')
+        setCelebrate(m.highest)
+      }
+    }).catch(() => {})
+  }, [progressKey])
 
   const award = async (points: number, correct: boolean, meta?: AwardMeta) => {
     try {
@@ -156,6 +176,20 @@ export default function App() {
 
       {onboard && (
         <Onboarding onDone={() => { localStorage.setItem('onboarded', '1'); setOnboard(false) }} />
+      )}
+
+      {/* Celebración al conseguir una medalla (dominar un nivel) */}
+      {celebrate && (
+        <div onClick={() => setCelebrate(null)}
+          className="animate-overlay-in fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div onClick={(e) => e.stopPropagation()}
+            className="flex flex-col items-center gap-4 rounded-3xl border border-line bg-surface p-8 text-center shadow-soft">
+            <div className="text-xs font-bold uppercase tracking-wide text-accent">{t('medal.unlocked')}</div>
+            <img src={`/medals/medal_${celebrate}.svg`} alt={celebrate} className="animate-medal h-40 w-40" />
+            <div className="text-2xl font-extrabold">{t('medal.levelReached').replace('{level}', celebrate)} 🎉</div>
+            <Button onClick={() => setCelebrate(null)}><Sparkles size={16} />{t('medal.cta')}</Button>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -82,16 +82,22 @@ _CONV_SYSTEM = (
     "Reply using EXACTLY this format, with these ENGLISH labels, one per line and nothing else:\n"
     "REPLY: <your English answer, ending with a question>\n"
     "CORRECTION: <wrong phrase> | <correct phrase> | <short explanation in SPANISH>\n"
-    "TIP: <one short vocabulary tip in Spanish, or leave blank>\n\n"
+    "TIP: <one short vocabulary tip in Spanish, or leave blank>\n"
+    "SCORE: <integer 0-100 rating the learner's last message>\n\n"
     "Add one CORRECTION line for each real grammar/vocabulary mistake in the learner's last message "
     "(max 3); write no CORRECTION line if there were none. The explanations are in Spanish but the "
     "REPLY stays in English. NEVER treat proper nouns, people's names, places, or company/brand "
     "names as mistakes (leave them exactly as the learner said them). "
     "Never use double quotes; join two options with ' o '.\n\n"
+    "For SCORE, rate the learner's LAST message from 0 to 100 for CEFR level {level}: reward effort, "
+    "length and ambition, and judge by how SERIOUS the mistakes are, not how many. A longer attempt "
+    "with small slips must score HIGHER than a short, safe one-word answer. A near-empty, off-topic "
+    "or unintelligible message scores under 40; most genuine attempts land between 70 and 95.\n\n"
     "Example:\n"
     "REPLY: That sounds great! How long have you been working there?\n"
     "CORRECTION: I have work | I have worked | Usa el presente perfecto para hablar de experiencia.\n"
-    "TIP: Puedes decir 'I've been working as a developer for 3 years'."
+    "TIP: Puedes decir 'I've been working as a developer for 3 years'.\n"
+    "SCORE: 82"
 )
 
 
@@ -122,7 +128,12 @@ def parse_conversation_raw(raw):
                 "correction": parts[1].replace(" / ", " o ").replace("/", " o "),
                 "explanation": parts[2] if len(parts) > 2 else "",
             })
-    return {"reply": reply, "corrections": corrections, "vocab_tip": fields.get("TIP", "")}
+    score = None
+    m = re.search(r"\d{1,3}", fields.get("SCORE", ""))
+    if m:
+        score = max(0, min(100, int(m.group())))
+    return {"reply": reply, "corrections": corrections,
+            "vocab_tip": fields.get("TIP", ""), "score": score}
 
 
 def partial_reply(raw):

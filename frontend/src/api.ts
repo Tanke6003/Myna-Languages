@@ -10,6 +10,7 @@ export interface ConversationTurn {
   corrections: Correction[]
   vocab_tip: string
   pron_words: string[]
+  score?: number | null
 }
 
 export interface Phonemes { arpabet: string; ipa: string }
@@ -105,6 +106,14 @@ export interface MixedItem {
   explain?: string
   remaining?: number
 }
+export interface LevelArea {
+  area: 'speak' | 'listen' | 'write' | 'vocab'
+  count: number
+  avg: number | null
+  need: number
+  floor: number
+  ok: boolean
+}
 export interface LevelUp {
   level: string
   next_level: string | null
@@ -112,7 +121,10 @@ export interface LevelUp {
   need: number
   count: number
   avg_score: number | null
+  areas: LevelArea[]
 }
+export interface Medal { level: string; earned: boolean }
+export interface Medals { levels: Medal[]; highest: string | null }
 export interface HomeData {
   missed: { word: string; count: number }[]
   missed_count: number
@@ -203,6 +215,7 @@ export const api = {
     fetch(`/api/levelup?level=${encodeURIComponent(level)}`).then(handle),
   home: (level: string): Promise<HomeData> =>
     fetch(`/api/home?level=${encodeURIComponent(level)}`).then(handle),
+  medals: (): Promise<Medals> => fetch('/api/medals').then(handle),
 
   conversationStart: (level: string, scenario: string, detail = ''): Promise<{ reply: string }> => {
     const f = new FormData()

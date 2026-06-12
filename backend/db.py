@@ -224,6 +224,19 @@ def level_stats(level):
     return {"count": row["n"] or 0, "avg_score": row["avg"]}
 
 
+def level_kind_stats(level):
+    """Por tipo de ejercicio en un nivel: nº de ejercicios, suma y conteo de puntuaciones.
+    Sirve para medir la COBERTURA por área de destreza (hablar/escuchar/escribir/vocabulario)
+    al sugerir subir de nivel. Se devuelve suma+conteo (no la media) para poder promediar
+    varios 'kind' dentro de un área con el peso correcto."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT kind, COUNT(*) AS n, SUM(score) AS s, COUNT(score) AS ns "
+            "FROM activity WHERE level = ? GROUP BY kind", (level,)).fetchall()
+    return {r["kind"]: {"count": r["n"] or 0, "score_sum": r["s"] or 0, "scored": r["ns"] or 0}
+            for r in rows}
+
+
 def export_all():
     with _conn() as c:
         st = c.execute("SELECT points, streak, best FROM stats WHERE id = 1").fetchone()

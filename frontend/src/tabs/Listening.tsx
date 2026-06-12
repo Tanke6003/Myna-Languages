@@ -26,7 +26,7 @@ export default function Listening({ level, award }: TabProps) {
     if (!ex || !selected) { toast(t('vocab.pick'), 'error'); return }
     const correct = selected.trim().toLowerCase() === ex.answer.trim().toLowerCase()
     setResult({ correct })
-    award(correct ? 5 : 0, correct, { kind: 'listening', level })
+    award(correct ? 5 : 0, correct, { kind: 'listening', level, score: correct ? 100 : 0 })
   }
 
   function optClass(o: string) {

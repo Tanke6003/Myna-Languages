@@ -61,14 +61,14 @@ def conversation_turn(
     scen = _scenario_instruction(scenario, detail)
     data = llm.conversation_turn(hist, user_text, level, scen)
     pron_words = _low_conf_words(result["words"])
-    db.log_activity("conversation", level)
-    db.bump_missed(pron_words)
+    db.bump_missed(pron_words)  # la actividad/puntuación la registra el cliente (award) con SCORE
     return {
         "user_text": user_text,
         "reply": data["reply"],
         "corrections": data["corrections"],
         "vocab_tip": data["vocab_tip"],
         "pron_words": pron_words,
+        "score": data["score"],
     }
 
 
@@ -107,14 +107,13 @@ def conversation_turn_stream(
                 if partial and partial != last:
                     last = partial
                     yield event({"type": "partial", "reply": partial})
-            # Persistimos en cuanto el turno está completo (antes del parse, que puede llamar a
-            # Ollama): así no perdemos la actividad si el parse/traducción falla.
-            db.log_activity("conversation", level)
-            db.bump_missed(pron_words)
+            db.bump_missed(pron_words)  # las palabras flojas no necesitan el parse
             # El parseo va DENTRO del try: si falla, el cliente recibe 'error' y no se cuelga.
+            # La actividad/puntuación la registra el cliente (award) con el SCORE del parse.
             data = llm.parse_conversation_raw(raw)
             yield event({"type": "done", "reply": data["reply"], "corrections": data["corrections"],
-                         "vocab_tip": data["vocab_tip"], "pron_words": pron_words})
+                         "vocab_tip": data["vocab_tip"], "pron_words": pron_words,
+                         "score": data["score"]})
         except Exception as e:  # noqa: BLE001
             yield event({"type": "error", "message": str(e)})
 
@@ -133,4 +132,5 @@ def conversation_turn_text(req: ConversationTextReq):
         "corrections": data["corrections"],
         "vocab_tip": data["vocab_tip"],
         "pron_words": [],
+        "score": data["score"],
     }

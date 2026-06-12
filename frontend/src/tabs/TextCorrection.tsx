@@ -29,7 +29,7 @@ export default function TextCorrection({ level, award }: TabProps) {
     try {
       const r = await api.textCheck(sentence, fix)
       setResult(r)
-      await award(r.correct ? 10 : 0, r.correct, { kind: 'text', level })
+      await award(r.correct ? 10 : 0, r.correct, { kind: 'text', level, score: r.correct ? 100 : 0 })
     } catch (e: any) { toast(e.message, 'error') } finally { setLoadingCheck(false) }
   }
 

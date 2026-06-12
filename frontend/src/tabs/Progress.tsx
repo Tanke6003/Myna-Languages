@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Trophy, Gauge, Flame, Volume2, RotateCcw, Download, Upload } from 'lucide-react'
-import { api, type Progress as ProgressData } from '../api'
+import { Trophy, Gauge, Flame, Volume2, RotateCcw, Download, Upload, Lock } from 'lucide-react'
+import { api, type Progress as ProgressData, type Medals } from '../api'
 import { Button, Card, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 
@@ -23,9 +23,13 @@ export default function Progress({ refreshKey }: { refreshKey: number }) {
   const toast = useToast()
   const { t } = useI18n()
   const [data, setData] = useState<ProgressData | null>(null)
+  const [medals, setMedals] = useState<Medals | null>(null)
 
   async function load() {
-    try { setData(await api.progress()) } catch (e: any) { toast(e.message, 'error') }
+    try {
+      const [d, m] = await Promise.all([api.progress(), api.medals()])
+      setData(d); setMedals(m)
+    } catch (e: any) { toast(e.message, 'error') }
   }
   useEffect(() => { load() }, [refreshKey])
 
@@ -78,6 +82,29 @@ export default function Progress({ refreshKey }: { refreshKey: number }) {
             <div className="text-xs text-muted">{t('prog.streakBest')} {data.stats.best}</div></div>
         </Card>
       </div>
+
+      {medals && (
+        <Card>
+          <h3 className="font-extrabold">{t('prog.medals')}</h3>
+          <p className="mb-3 text-sm text-muted">{t('prog.medalsHint')}</p>
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+            {medals.levels.map((m) => (
+              <div key={m.level} className="flex flex-col items-center gap-1.5">
+                <div className="relative">
+                  <img src={`/medals/medal_${m.level}.svg`} alt={m.level}
+                    className={`h-16 w-16 transition ${m.earned ? '' : 'opacity-30 grayscale'}`} />
+                  {!m.earned && (
+                    <span className="absolute inset-0 flex items-center justify-center text-muted">
+                      <Lock size={18} />
+                    </span>
+                  )}
+                </div>
+                <span className={`text-xs font-extrabold ${m.earned ? 'text-accent' : 'text-muted'}`}>{m.level}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card>
         <h3 className="mb-2 font-extrabold">{t('prog.activity')} ({data.total_count})</h3>

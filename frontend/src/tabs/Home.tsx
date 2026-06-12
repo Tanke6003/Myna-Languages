@@ -33,7 +33,16 @@ export default function Home({ onOpen, onLevelUp, level, refreshKey }: Props) {
       recs.push({ Icon: Shuffle, text: `${data.missed_count} ${t('rec.missedWords')}: ${data.missed.slice(0, 5).map((m) => m.word).join(', ')}`, btn: t('rec.review'), action: () => onOpen('mixed') })
     }
     if (!lu.ready && data.total_activity > 0 && lu.next_level) {
-      recs.push({ Icon: TrendingUp, text: `${t('rec.progressTo')} ${lu.next_level}: ${lu.count}/${lu.need} · ${lu.avg_score || 0}/85` })
+      const emoji: Record<string, string> = { speak: '🗣️', listen: '👂', write: '✍️', vocab: '📚' }
+      const breakdown = lu.areas
+        .map((a) => {
+          const reps = `${Math.min(a.count, a.need)}/${a.need}`
+          // Hiciste las reps pero la media no llega al piso -> muestra el porqué (la media).
+          const tail = a.ok ? ' ✓' : (a.count >= a.need && a.avg != null ? ` (${a.avg}%)` : '')
+          return `${emoji[a.area] || ''} ${reps}${tail}`
+        })
+        .join(' · ')
+      recs.push({ Icon: TrendingUp, text: `${t('rec.progressTo')} ${lu.next_level}: ${breakdown}` })
     }
   }
   const shown = recs.slice(0, 3)

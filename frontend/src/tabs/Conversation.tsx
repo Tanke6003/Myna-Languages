@@ -11,7 +11,7 @@ interface Msg { role: 'user' | 'assistant'; content: string }
 const THINKING = ''
 const isThinking = (c: string) => c === THINKING || c === ''
 
-export default function Conversation({ level, scenarios }: TabProps) {
+export default function Conversation({ level, scenarios, award }: TabProps) {
   const toast = useToast()
   const { t } = useI18n()
   const [scenario, setScenario] = useState('')
@@ -76,8 +76,11 @@ export default function Conversation({ level, scenarios }: TabProps) {
             setMessages((m) => { const nm = [...m]; nm[nm.length - 1] = { role: 'assistant', content: ev.reply }; return nm })
           } else if (ev.type === 'done') {
             setMessages((m) => { const nm = [...m]; nm[nm.length - 1] = { role: 'assistant', content: ev.reply }; return nm })
-            setFb({ user_text: userText, reply: ev.reply, corrections: ev.corrections, vocab_tip: ev.vocab_tip, pron_words: ev.pron_words })
+            setFb({ user_text: userText, reply: ev.reply, corrections: ev.corrections, vocab_tip: ev.vocab_tip, pron_words: ev.pron_words, score: ev.score })
             playTTS(ev.reply, { lang: 'en' })
+            // La IA puntúa el turno (esfuerzo + gravedad, no nº de errores). Da puntos y nutre el área 🗣️.
+            const sc = typeof ev.score === 'number' ? ev.score : undefined
+            award(sc != null ? Math.round(sc / 10) : 1, (sc ?? 0) >= 80, { kind: 'conversation', level, score: sc })
           } else if (ev.type === 'error') {
             setMessages((m) => (m.length && m[m.length - 1].role === 'assistant' && isThinking(m[m.length - 1].content) ? m.slice(0, -1) : m))
             toast(ev.message, 'error')
@@ -174,6 +177,12 @@ function ConvFeedback(
 
   return (
     <div className="flex flex-col gap-3 text-sm">
+      {typeof fb.score === 'number' && (
+        <div className="flex items-center gap-2 rounded-lg bg-surface2 px-3 py-2">
+          <span className="text-xs font-bold uppercase tracking-wide text-muted">{t('conv.turnScore')}</span>
+          <span className="ml-auto font-extrabold text-accent">{fb.score}<span className="text-xs text-muted"> /100</span></span>
+        </div>
+      )}
       <div className="rounded-lg bg-surface2 p-2.5">
         <div className="mb-1 flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wide text-muted">{t('conv.heard')}</span>

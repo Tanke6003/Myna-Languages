@@ -12,8 +12,8 @@ WHISPER_SIZES = ["tiny.en", "base.en", "small.en", "medium.en"]
 
 def current_model_name():
     try:
-        with open(_WHISPER_FILE, "r", encoding="utf-8") as f:
-            v = f.read().strip()
+        with open(_WHISPER_FILE, "r", encoding="utf-8-sig") as f:
+            v = f.read().lstrip("﻿").strip()
             if v:
                 return v
     except Exception:

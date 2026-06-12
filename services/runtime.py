@@ -13,8 +13,9 @@ _current = None
 
 def _load():
     try:
-        with open(_MODEL_FILE, "r", encoding="utf-8") as f:
-            return f.read().strip() or OLLAMA_MODEL
+        # utf-8-sig + lstrip: tolera el BOM que escribe PowerShell 5.1 (Set-Content -Encoding utf8).
+        with open(_MODEL_FILE, "r", encoding="utf-8-sig") as f:
+            return f.read().lstrip("﻿").strip() or OLLAMA_MODEL
     except Exception:
         return OLLAMA_MODEL
 

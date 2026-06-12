@@ -23,13 +23,25 @@ setup_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
-    # Precarga el modelo Whisper en segundo plano para que la 1ª petición no espere.
+    # Precarga Whisper y el modelo de Ollama en segundo plano: así la 1ª petición real
+    # (transcribir / conversar) no paga el arranque en frío, que es lento sobre todo en Ollama.
     def _warmup():
         try:
             from services.stt import get_model
             get_model()
         except Exception as e:  # noqa: BLE001
             log.warning("Whisper no precargado: %s", e)
+        try:
+            import ollama
+            from services import runtime
+            import config
+            model = runtime.get_model()
+            # Una llamada mínima fuerza a Ollama a cargar el modelo en memoria y dejarlo caliente.
+            ollama.chat(model=model, messages=[{"role": "user", "content": "hi"}],
+                        options={"num_predict": 1}, keep_alive=config.OLLAMA_KEEP_ALIVE)
+            log.info("Ollama precargado: %s", model)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Ollama no precargado: %s", e)
     threading.Thread(target=_warmup, daemon=True).start()
     yield
 

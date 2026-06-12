@@ -231,7 +231,9 @@ def export_all():
             "SELECT ts, kind, level, score, correct FROM activity").fetchall()]
         missed = [dict(r) for r in c.execute(
             "SELECT word, count, last_ts FROM missed").fetchall()]
-    return {"stats": dict(st), "activity": activity, "missed": missed}
+        flashcards = [dict(r) for r in c.execute(
+            "SELECT front, back, ease, interval, reps, due FROM flashcards").fetchall()]
+    return {"stats": dict(st), "activity": activity, "missed": missed, "flashcards": flashcards}
 
 
 def import_all(data):
@@ -241,10 +243,17 @@ def import_all(data):
                   (int(s.get("points", 0)), int(s.get("streak", 0)), int(s.get("best", 0))))
         c.execute("DELETE FROM activity")
         c.execute("DELETE FROM missed")
+        c.execute("DELETE FROM flashcards")
         for a in data.get("activity", []):
             c.execute("INSERT INTO activity (ts, kind, level, score, correct) VALUES (?, ?, ?, ?, ?)",
                       (a.get("ts"), a.get("kind"), a.get("level"), a.get("score"), a.get("correct")))
         for m in data.get("missed", []):
             c.execute("INSERT OR REPLACE INTO missed (word, count, last_ts) VALUES (?, ?, ?)",
                       (m.get("word"), int(m.get("count", 0)), m.get("last_ts")))
+        for f in data.get("flashcards", []):
+            c.execute("INSERT OR REPLACE INTO flashcards (front, back, ease, interval, reps, due) "
+                      "VALUES (?, ?, ?, ?, ?, ?)",
+                      (f.get("front"), f.get("back", ""), float(f.get("ease", 2.5)),
+                       float(f.get("interval", 0)), int(f.get("reps", 0)),
+                       f.get("due") or _now_iso()))
     return get_progress()

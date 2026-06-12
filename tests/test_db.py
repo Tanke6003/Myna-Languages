@@ -61,7 +61,9 @@ def test_level_stats(fresh_db):
 def test_export_import_roundtrip(fresh_db):
     fresh_db.award(20, True)
     fresh_db.bump_missed(["stubborn"])
+    fresh_db.fc_add("ubiquitous", "omnipresente")
     data = fresh_db.export_all()
+    assert len(data["flashcards"]) == 1
 
     fresh_db.reset_stats()
     assert fresh_db.get_stats()["points"] == 0
@@ -70,3 +72,4 @@ def test_export_import_roundtrip(fresh_db):
     fresh_db.import_all(data)
     assert fresh_db.get_stats()["points"] == 20
     assert fresh_db.missed_count() == 1
+    assert fresh_db.fc_counts()["total"] == 1

@@ -3,17 +3,21 @@
 ; Las rutas son relativas a la RAIZ del proyecto (SourceDir=..).
 
 #define AppName "Myna"
+; Version: fuente UNICA de verdad en el fichero VERSION de la raiz del proyecto.
+; Asi instalador, backend y UI muestran siempre el mismo numero (se cambia en un solo sitio).
+#define AppVersion Trim(FileRead(FileOpen(SourcePath + "..\VERSION")))
 
 [Setup]
 AppName={#AppName}
-AppVersion=1.3.0
+AppVersion={#AppVersion}
 AppPublisher=Local
 DefaultDirName={localappdata}\Myna
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 SourceDir=..
 OutputDir=dist_installer
-OutputBaseFilename=Myna-Setup
+; El .exe lleva nombre + version, p. ej. Myna-Setup-1.3.0.exe
+OutputBaseFilename={#AppName}-Setup-{#AppVersion}
 SetupIconFile=myna.ico
 Compression=lzma2
 SolidCompression=yes

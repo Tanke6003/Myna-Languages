@@ -8,6 +8,20 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AUDIO_DIR = os.path.join(BASE_DIR, "_audio_cache")  # audios TTS generados
 
+
+# --- Versión de la app (fuente única de verdad: el fichero VERSION en la raíz) ---
+# La leen también el instalador (installer.iss) y la UI (vía /api/system).
+def _read_version():
+    try:
+        # utf-8-sig: tolera el BOM que pueda meter un editor en Windows.
+        with open(os.path.join(BASE_DIR, "VERSION"), "r", encoding="utf-8-sig") as f:
+            return f.read().strip() or "0.0.0"
+    except Exception:
+        return "0.0.0"
+
+
+APP_VERSION = _read_version()
+
 # --- Modelo de IA (Ollama, local) ---
 # Ejecuta `ollama list` para ver los que tienes. qwen3.5:9b o gemma4 funcionan bien.
 OLLAMA_MODEL = os.environ.get("TUTOR_OLLAMA_MODEL", "qwen2.5:3b")

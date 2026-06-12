@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { MemoryStick, Cpu, Monitor, Mic, RefreshCw, Check, Download, Star, Trash2 } from 'lucide-react'
+import { MemoryStick, Cpu, Monitor, Mic, RefreshCw, Check, Download, Star, Trash2, Info } from 'lucide-react'
 import { api, type SystemInfo } from '../api'
 import { Button, Card, Segmented, Select, Spinner, useToast } from '../ui'
 import { useI18n } from '../i18n'
@@ -109,6 +109,11 @@ export default function Settings() {
           <Row icon={<Monitor size={16} />} label={t('settings.gpu')} value={gpuValue} />
           {info.vram_gb > 0 && <Row icon={<Monitor size={16} />} label={t('settings.vram')} value={`${info.vram_gb} GB`} />}
           <Row icon={<Mic size={16} />} label={t('settings.whisper')} value={info.whisper_device.toUpperCase()} />
+          <div className="flex items-center gap-2 rounded-lg bg-surface2 px-3 py-2 text-sm sm:col-span-2">
+            <span className="text-accent"><Info size={16} /></span>
+            <span className="font-bold">{t('settings.version')}</span>
+            <span className="ml-auto text-muted" translate="no">Myna v{info.version}</span>
+          </div>
         </div>
       </Card>
 

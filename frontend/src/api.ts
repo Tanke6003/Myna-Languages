@@ -44,6 +44,7 @@ export interface Progress {
 export interface AwardMeta { kind?: string; level?: string; score?: number; words?: string[] }
 
 export interface SystemInfo {
+  version: string
   ram_gb: number
   cpu_cores: number
   cpu_threads: number

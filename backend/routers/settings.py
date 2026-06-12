@@ -194,6 +194,7 @@ def system_info():
     prefer = [m for m in fitting if m.get("family") != "deepseek"] or fitting
     recommended = max(prefer, key=lambda m: m.get("gb", 0))["name"] if prefer else "qwen2.5:3b"
     return {
+        "version": config.APP_VERSION,
         "ram_gb": ram_gb,
         "vram_gb": vram,
         "budget_gb": round(budget, 1),

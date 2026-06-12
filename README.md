@@ -38,7 +38,8 @@ Arquitectura **desacoplada**:
    .\packaging\package.ps1                    # empaqueta la app
    & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" packaging\installer.iss   # crea el Setup.exe
    ```
-   → produce **`dist_installer\Myna-Setup.exe`**.
+   → produce **`dist_installer\Myna-Setup-<versión>.exe`** (p. ej. `Myna-Setup-1.3.0.exe`,
+   tomando el número de la versión del fichero `VERSION` de la raíz).
 2. Copia ese `.exe` a la otra PC y **doble clic** → Siguiente → Instalar → Finalizar.
 3. La **primera vez que se abre**, instala solo lo necesario (Python, dependencias, Ollama y
    el modelo según GPU/RAM). Se instala en la carpeta del usuario (sin permisos de admin).

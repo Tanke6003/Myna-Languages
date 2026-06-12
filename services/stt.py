@@ -1,10 +1,13 @@
 """Reconocimiento de voz local con faster-whisper."""
 import os
+import threading
 
 from config import WHISPER_MODEL, WHISPER_DEVICE, WHISPER_COMPUTE, BASE_DIR
 
 _model = None
 _actual_device = None  # dispositivo real donde cargó el modelo (tras posible fallback)
+_load_lock = threading.Lock()   # evita cargar el modelo dos veces en paralelo
+_infer_lock = threading.Lock()  # WhisperModel.transcribe no es seguro en paralelo
 _WHISPER_FILE = os.path.join(BASE_DIR, "selected_whisper.txt")
 # Tamaños disponibles (más grande = más preciso pero más lento)
 WHISPER_SIZES = ["tiny.en", "base.en", "small.en", "medium.en"]
@@ -84,7 +87,11 @@ def active_device():
 def get_model():
     """Carga el modelo Whisper una sola vez (la primera vez lo descarga)."""
     global _model, _actual_device
-    if _model is None:
+    if _model is not None:
+        return _model
+    with _load_lock:
+        if _model is not None:   # otro hilo lo cargó mientras esperábamos
+            return _model
         _add_cuda_dll_dirs()
         from faster_whisper import WhisperModel
         name = current_model_name()
@@ -117,23 +124,25 @@ def transcribe(audio_path, word_timestamps=False):
         return {"text": "", "words": []}
 
     model = get_model()
-    segments, _info = model.transcribe(
-        audio_path,
-        language="en",
-        word_timestamps=word_timestamps,
-        vad_filter=True,  # ignora silencios
-    )
-
-    text_parts, words = [], []
-    for seg in segments:
-        text_parts.append(seg.text)
-        if word_timestamps and seg.words:
-            for w in seg.words:
-                words.append({
-                    "word": w.word.strip(),
-                    "prob": round(float(w.probability), 3),
-                    "start": round(float(w.start), 2),
-                    "end": round(float(w.end), 2),
-                })
+    # La inferencia se ejecuta al iterar 'segments'; serializamos todo el bloque porque
+    # WhisperModel.transcribe no es seguro en paralelo sobre la misma instancia.
+    with _infer_lock:
+        segments, _info = model.transcribe(
+            audio_path,
+            language="en",
+            word_timestamps=word_timestamps,
+            vad_filter=True,  # ignora silencios
+        )
+        text_parts, words = [], []
+        for seg in segments:
+            text_parts.append(seg.text)
+            if word_timestamps and seg.words:
+                for w in seg.words:
+                    words.append({
+                        "word": w.word.strip(),
+                        "prob": round(float(w.probability), 3),
+                        "start": round(float(w.start), 2),
+                        "end": round(float(w.end), 2),
+                    })
 
     return {"text": "".join(text_parts).strip(), "words": words}

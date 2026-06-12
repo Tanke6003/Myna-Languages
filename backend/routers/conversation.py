@@ -107,11 +107,12 @@ def conversation_turn_stream(
                 if partial and partial != last:
                     last = partial
                     yield event({"type": "partial", "reply": partial})
-            # El parseo (que puede llamar a Ollama como red de seguridad) y las escrituras
-            # van DENTRO del try: si fallan, el cliente recibe 'error' y no se queda colgado.
-            data = llm.parse_conversation_raw(raw)
+            # Persistimos en cuanto el turno está completo (antes del parse, que puede llamar a
+            # Ollama): así no perdemos la actividad si el parse/traducción falla.
             db.log_activity("conversation", level)
             db.bump_missed(pron_words)
+            # El parseo va DENTRO del try: si falla, el cliente recibe 'error' y no se cuelga.
+            data = llm.parse_conversation_raw(raw)
             yield event({"type": "done", "reply": data["reply"], "corrections": data["corrections"],
                          "vocab_tip": data["vocab_tip"], "pron_words": pron_words})
         except Exception as e:  # noqa: BLE001

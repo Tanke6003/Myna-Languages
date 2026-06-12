@@ -36,10 +36,13 @@ async def lifespan(app: FastAPI):
             from services import runtime
             import config
             model = runtime.get_model()
-            # Una llamada mínima fuerza a Ollama a cargar el modelo en memoria y dejarlo caliente.
+            opts = {"num_predict": 1}
+            if runtime.get_device() == "cpu":
+                opts["num_gpu"] = 0      # respeta la elección del usuario
+            # Una llamada mínima fuerza a Ollama a cargar el modelo (en GPU si está disponible).
             ollama.chat(model=model, messages=[{"role": "user", "content": "hi"}],
-                        options={"num_predict": 1}, keep_alive=config.OLLAMA_KEEP_ALIVE)
-            log.info("Ollama precargado: %s", model)
+                        options=opts, keep_alive=config.OLLAMA_KEEP_ALIVE)
+            log.info("Ollama precargado: %s (%s)", model, runtime.get_device())
         except Exception as e:  # noqa: BLE001
             log.warning("Ollama no precargado: %s", e)
     threading.Thread(target=_warmup, daemon=True).start()
@@ -55,6 +58,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def block_foreign_origin(request: Request, call_next):
+    """Defensa simple: rechaza peticiones que MUTAN (no-GET) si vienen de un origen
+    que no es local. Evita que otra web abierta en el navegador llame a la API local
+    (p. ej. borrar un modelo). El propio frontend es mismo-origen y no manda Origin."""
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        origin = request.headers.get("origin")
+        if origin:
+            host = origin.split("://")[-1].split(":")[0]
+            if host not in ("localhost", "127.0.0.1"):
+                return JSONResponse(status_code=403, content={"detail": "Origen no permitido."})
+    return await call_next(request)
 
 
 @app.exception_handler(Exception)

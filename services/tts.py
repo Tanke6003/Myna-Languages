@@ -12,6 +12,35 @@ from config import TTS_VOICE, TTS_VOICE_ES, AUDIO_DIR
 
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
+
+def prune_cache(max_files=600, max_mb=200):
+    """Limita el caché de audio: borra los más viejos si se pasa de tope (archivos o MB)."""
+    try:
+        files = []
+        total = 0
+        for name in os.listdir(AUDIO_DIR):
+            p = os.path.join(AUDIO_DIR, name)
+            if os.path.isfile(p):
+                st = os.stat(p)
+                files.append((st.st_mtime, st.st_size, p))
+                total += st.st_size
+        files.sort()  # más antiguos primero
+        limit = max_mb * 1024 * 1024
+        i = 0
+        while files and (len(files) - i > max_files or total > limit):
+            _, size, p = files[i]
+            try:
+                os.remove(p)
+                total -= size
+            except OSError:
+                pass
+            i += 1
+    except Exception:
+        pass
+
+
+prune_cache()  # poda al arrancar (barato salvo que haya miles de ficheros)
+
 # Pistas de que un texto está en español
 _ES_ACCENTS = re.compile(r"[áéíóúñ¿¡]", re.IGNORECASE)
 _ES_WORDS = re.compile(

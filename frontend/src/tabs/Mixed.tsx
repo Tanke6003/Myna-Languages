@@ -58,56 +58,63 @@ export default function Mixed({ award, active }: TabProps & { active: boolean })
       <Card className="flex flex-col gap-3">
         <p className="text-sm text-muted">{t('mixed.intro')} · <b>{item.remaining}</b> {t('mixed.remaining')}.</p>
 
-        {item.type === 'meaning' ? (
-          <>
-            <div className="rounded-xl bg-surface2 p-4 text-center">
-              <button onClick={() => playTTS(item.word!, { lang: 'en' })}
-                className="inline-flex items-center gap-2 text-2xl font-extrabold hover:text-accent" translate="no">
-                <Volume2 size={18} />{item.word}
-              </button>
-            </div>
-            <div className="flex flex-col gap-2">
-              {item.options!.map((o) => (
-                <button key={o} onClick={() => !result && setSelected(o)}
-                  className={`rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${optClass(o)}`}>
-                  {o}
-                </button>
-              ))}
-            </div>
-          </>
+        {loading ? (
+          // Cargando la siguiente palabra: indicador y bloqueo (sin opciones ni Comprobar clicables).
+          <div className="flex items-center justify-center rounded-xl bg-surface2 p-8"><Thinking /></div>
         ) : (
           <>
-            <div className="flex items-center justify-center gap-2 rounded-xl bg-surface2 p-4">
-              <Button variant="outline" onClick={() => playTTS(item.word!, { lang: 'en' })}>
-                <Volume2 size={16} />{t('btn.repeat')}
-              </Button>
-              <Button variant="outline" onClick={() => playTTS(item.word!, { lang: 'en', slow: true })}>
-                <Volume2 size={16} />{t('btn.slow')}
-              </Button>
-            </div>
-            <label className="text-sm font-semibold text-muted">{t('mixed.listenPrompt')}</label>
-            <input value={typed} onChange={(e) => setTyped(e.target.value)} translate="no"
-              onKeyDown={(e) => e.key === 'Enter' && !result && check()}
-              className="rounded-xl border border-line bg-surface px-3 py-2.5 text-sm" />
+            {item.type === 'meaning' ? (
+              <>
+                <div className="rounded-xl bg-surface2 p-4 text-center">
+                  <button onClick={() => playTTS(item.word!, { lang: 'en' })}
+                    className="inline-flex items-center gap-2 text-2xl font-extrabold hover:text-accent" translate="no">
+                    <Volume2 size={18} />{item.word}
+                  </button>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {item.options!.map((o) => (
+                    <button key={o} onClick={() => !result && setSelected(o)}
+                      className={`rounded-xl border px-3 py-2.5 text-left text-sm font-semibold transition ${optClass(o)}`}>
+                      {o}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-center gap-2 rounded-xl bg-surface2 p-4">
+                  <Button variant="outline" onClick={() => playTTS(item.word!, { lang: 'en' })}>
+                    <Volume2 size={16} />{t('btn.repeat')}
+                  </Button>
+                  <Button variant="outline" onClick={() => playTTS(item.word!, { lang: 'en', slow: true })}>
+                    <Volume2 size={16} />{t('btn.slow')}
+                  </Button>
+                </div>
+                <label className="text-sm font-semibold text-muted">{t('mixed.listenPrompt')}</label>
+                <input value={typed} onChange={(e) => setTyped(e.target.value)} translate="no"
+                  onKeyDown={(e) => e.key === 'Enter' && !result && check()}
+                  className="rounded-xl border border-line bg-surface px-3 py-2.5 text-sm" />
+              </>
+            )}
+
+            {!result
+              ? <Button onClick={check}><CheckCircle2 size={16} />{t('btn.check')}</Button>
+              : (
+                <>
+                  <div className="rounded-xl border border-line p-3 text-sm">
+                    <div className={`flex items-center gap-1.5 font-extrabold ${result.correct ? 'text-good' : 'text-bad'}`}>
+                      {result.correct ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+                      {result.correct
+                        ? t('vocab.correct')
+                        : <span translate="no">{item.type === 'listen' ? item.word : `${t('vocab.answer')} ${item.answer}`}</span>}
+                    </div>
+                    {item.explain && <p className="mt-1 text-muted">{item.explain}</p>}
+                  </div>
+                  <Button onClick={next}><Shuffle size={16} />{t('mixed.next')}</Button>
+                </>
+              )}
           </>
         )}
-
-        {!result
-          ? <Button onClick={check}><CheckCircle2 size={16} />{t('btn.check')}</Button>
-          : (
-            <>
-              <div className="rounded-xl border border-line p-3 text-sm">
-                <div className={`flex items-center gap-1.5 font-extrabold ${result.correct ? 'text-good' : 'text-bad'}`}>
-                  {result.correct ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
-                  {result.correct
-                    ? t('vocab.correct')
-                    : <span translate="no">{item.type === 'listen' ? item.word : `${t('vocab.answer')} ${item.answer}`}</span>}
-                </div>
-                {item.explain && <p className="mt-1 text-muted">{item.explain}</p>}
-              </div>
-              <Button onClick={next} loading={loading}><Shuffle size={16} />{t('mixed.next')}</Button>
-            </>
-          )}
       </Card>
     </div>
   )

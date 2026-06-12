@@ -76,13 +76,24 @@ $chrome = @(
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if ($chrome) {
-  # Perfil propio: la ventana es un proceso independiente, asi sabemos cuando el usuario la cierra.
+  # Perfil propio para la ventana de Myna: asi distinguimos SUS procesos de tu navegador normal.
   $profileDir = Join-Path $env:LOCALAPPDATA 'Myna\browser'
-  $browser = Start-Process -PassThru $chrome -ArgumentList "--app=$url", "--user-data-dir=$profileDir"
-  try { Wait-Process -Id $browser.Id } catch {}
+  Start-Process $chrome -ArgumentList "--app=$url", "--user-data-dir=$profileDir"
+
+  # Al cerrar la ventana, detener el backend. No seguimos un PID: Chrome/Edge reparten la ventana
+  # entre varios procesos (y el lanzador puede salir enseguida). Seguimos el PERFIL: esperamos a
+  # que NO quede ningun proceso del navegador usando el perfil de Myna.
+  $procName = [IO.Path]::GetFileNameWithoutExtension($chrome)   # chrome / msedge
+  $isOpen = {
+    [bool](Get-CimInstance Win32_Process -Filter "Name='$procName.exe'" -ErrorAction SilentlyContinue |
+           Where-Object { $_.CommandLine -like "*$profileDir*" })
+  }
+  for ($i = 0; $i -lt 20 -and -not (& $isOpen); $i++) { Start-Sleep -Milliseconds 500 }  # espera a que abra
+  while (& $isOpen) { Start-Sleep -Milliseconds 1000 }                                   # espera a que cierre
   Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
 }
 else {
-  # Sin Chrome/Edge: abre el navegador por defecto y deja el servidor corriendo en segundo plano.
+  # Sin Chrome/Edge: no podemos saber cuando cierras la pestana del navegador por defecto,
+  # asi que el backend queda en segundo plano (cierralo desde el Administrador de tareas).
   Start-Process $url
 }

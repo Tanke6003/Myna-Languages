@@ -123,6 +123,7 @@ export interface LevelUp {
   avg_score: number | null
   areas: LevelArea[]
 }
+export interface Reminder { enabled: boolean; time: string }
 export interface Medal { level: string; earned: boolean }
 export interface Medals { levels: Medal[]; highest: string | null }
 export interface HomeData {
@@ -170,6 +171,9 @@ export const api = {
     postJSON('/api/settings/model', { model }),
   setWhisper: (model: string): Promise<{ whisper_model: string }> =>
     postJSON('/api/settings/whisper', { model }),
+  getReminder: (): Promise<Reminder> => fetch('/api/settings/reminder').then(handle),
+  setReminder: (enabled: boolean, time: string): Promise<Reminder> =>
+    postJSON('/api/settings/reminder', { enabled, time }),
   setDevice: (device: string): Promise<{ llm_device: string }> =>
     postJSON('/api/settings/device', { device }),
   deleteModel: (model: string): Promise<{ ok: boolean }> =>

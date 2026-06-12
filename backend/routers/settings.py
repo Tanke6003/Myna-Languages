@@ -1,6 +1,9 @@
 """Información del sistema y configuración de modelos (Ollama + Whisper)."""
 import json
 import os
+import platform
+import re
+import subprocess
 
 import httpx
 from fastapi import APIRouter, Body, Form, HTTPException
@@ -287,3 +290,59 @@ def delete_model(body: dict = Body(...)):
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"No se pudo borrar: {e}")
     return {"ok": True}
+
+
+# ----------------------------------------------------------------------------
+# Recordatorio diario (notificación del sistema; funciona con la app cerrada)
+# ----------------------------------------------------------------------------
+_REMINDER_FILE = os.path.join(config.BASE_DIR, "reminder.json")
+_TIME_RE = re.compile(r"^[0-2]?\d:[0-5]\d$")
+
+
+def _read_reminder():
+    try:
+        with open(_REMINDER_FILE, encoding="utf-8-sig") as f:
+            d = json.load(f)
+        t = d.get("time") or "19:00"
+        return {"enabled": bool(d.get("enabled")), "time": t if _TIME_RE.match(t) else "19:00"}
+    except Exception:
+        return {"enabled": False, "time": "19:00"}
+
+
+def _apply_reminder(enabled, time):
+    """Registra/quita la tarea del SO: Tarea Programada en Windows, systemd --user en Linux.
+    Best-effort: si el script no existe o falla, no se rompe la petición."""
+    action = "enable" if enabled else "disable"
+    if platform.system() == "Windows":
+        script = os.path.join(config.BASE_DIR, "scripts", "reminder_setup.ps1")
+        if os.path.exists(script):
+            subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                            "-File", script, "-Action", action, "-Time", time],
+                           capture_output=True, timeout=30)
+    else:
+        script = os.path.join(config.BASE_DIR, "scripts", "reminder_setup.sh")
+        if os.path.exists(script):
+            subprocess.run(["bash", script, action, time], capture_output=True, timeout=30)
+
+
+@router.get("/settings/reminder")
+def get_reminder():
+    return _read_reminder()
+
+
+@router.post("/settings/reminder")
+def set_reminder(body: dict = Body(...)):
+    enabled = bool(body.get("enabled"))
+    time = (body.get("time") or "19:00").strip()
+    if not _TIME_RE.match(time):
+        time = "19:00"
+    try:
+        _apply_reminder(enabled, time)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"No se pudo programar el recordatorio: {e}")
+    try:
+        with open(_REMINDER_FILE, "w", encoding="utf-8") as f:
+            json.dump({"enabled": enabled, "time": time}, f)
+    except Exception:
+        pass
+    return {"enabled": enabled, "time": time}

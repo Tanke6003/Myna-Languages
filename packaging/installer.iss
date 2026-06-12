@@ -46,3 +46,9 @@ Filename: "wscript.exe"; \
   WorkingDir: "{app}"; \
   Description: "Abrir Myna ahora (instalara lo necesario la primera vez)"; \
   Flags: postinstall nowait skipifsilent
+
+[UninstallRun]
+; Al desinstalar, quita la Tarea Programada del recordatorio (si existe).
+Filename: "powershell.exe"; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\reminder_setup.ps1"" -Action disable"; \
+  Flags: runhidden; RunOnceId: "MynaReminderOff"

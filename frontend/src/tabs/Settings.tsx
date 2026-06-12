@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { MemoryStick, Cpu, Monitor, Mic, RefreshCw, Check, Download, Star, Trash2, Info } from 'lucide-react'
-import { api, type SystemInfo } from '../api'
+import { MemoryStick, Cpu, Monitor, Mic, RefreshCw, Check, Download, Star, Trash2, Info, Bell } from 'lucide-react'
+import { api, type SystemInfo, type Reminder } from '../api'
 import { Button, Card, Segmented, Select, Spinner, useToast } from '../ui'
 import { useI18n } from '../i18n'
 
@@ -25,6 +25,7 @@ export default function Settings() {
   const [pulling, setPulling] = useState<string | null>(null)
   const [pullPct, setPullPct] = useState<number | null>(null)
   const [pullStatus, setPullStatus] = useState('')
+  const [reminder, setReminder] = useState<Reminder | null>(null)
 
   async function load() {
     try {
@@ -33,6 +34,16 @@ export default function Settings() {
     } catch (e: any) { toast(e.message, 'error') }
   }
   useEffect(() => { load() }, [])
+  useEffect(() => { api.getReminder().then(setReminder).catch(() => {}) }, [])
+
+  async function saveReminder(enabled: boolean, time: string) {
+    setReminder({ enabled, time })   // optimista
+    try {
+      const r = await api.setReminder(enabled, time)
+      setReminder(r)
+      toast(r.enabled ? `${t('settings.reminderOn')} ${r.time}` : t('settings.reminderOff'), 'success')
+    } catch (e: any) { toast(e.message, 'error'); api.getReminder().then(setReminder).catch(() => {}) }
+  }
 
   async function apply(chosen: string) {
     setSaving(true)
@@ -191,6 +202,24 @@ export default function Settings() {
           <Button onClick={() => applyWhisper(whisper)} loading={saving}><Check size={16} />{t('settings.apply')}</Button>
         </div>
       </Card>
+
+      {/* Recordatorio diario (notificación del sistema, funciona con la app cerrada) */}
+      {reminder && (
+        <Card className="flex flex-col gap-3">
+          <h3 className="flex items-center gap-2 font-extrabold"><Bell size={18} className="text-accent" />{t('settings.reminder')}</h3>
+          <p className="text-sm text-muted">{t('settings.reminderHint')}</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
+              <input type="checkbox" className="accent-[var(--accent)]" checked={reminder.enabled}
+                onChange={(e) => saveReminder(e.target.checked, reminder.time)} />
+              {t('settings.reminderEnable')}
+            </label>
+            <input type="time" value={reminder.time} disabled={!reminder.enabled}
+              onChange={(e) => saveReminder(true, e.target.value)}
+              className="rounded-xl border border-line bg-surface px-3 py-2 text-sm disabled:opacity-50" />
+          </div>
+        </Card>
+      )}
     </div>
   )
 }

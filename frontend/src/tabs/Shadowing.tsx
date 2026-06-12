@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Repeat2, Volume2, CheckCircle2, Eye } from 'lucide-react'
 import { api, type ReadingReport } from '../api'
-import { Button, Card, MicRecorder, playTTS, useToast } from '../ui'
+import { Button, Card, MicRecorder, Thinking, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -53,6 +53,7 @@ export default function Shadowing({ level, award }: TabProps) {
             </>
           )}
         </div>
+        {loadingNew && <div className="rounded-xl bg-surface2 p-3"><Thinking /></div>}
         {sentence && !showText && (
           <button onClick={() => setShowText(true)}
             className="inline-flex items-center gap-1 self-start text-xs font-semibold text-muted hover:text-text">

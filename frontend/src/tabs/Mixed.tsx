@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Shuffle, Volume2, CheckCircle2, XCircle } from 'lucide-react'
 import { api, type MixedItem } from '../api'
-import { Button, Card, playTTS, useToast } from '../ui'
+import { Button, Card, Thinking, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -41,7 +41,7 @@ export default function Mixed({ award, active }: TabProps & { active: boolean })
     await award(correct ? 4 : 0, correct, { kind: 'vocab', words: correct ? [] : [item.word] })
   }
 
-  if (!item) return <div className="mx-auto max-w-2xl"><Card><p className="text-sm text-muted">…</p></Card></div>
+  if (!item) return <div className="mx-auto max-w-2xl"><Card><Thinking /></Card></div>
   if (item.empty) {
     return <div className="mx-auto max-w-2xl"><Card><p className="text-sm text-muted">{t('mixed.empty')}</p></Card></div>
   }

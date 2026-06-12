@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { Play, Send, RotateCcw, Volume2, Pencil, X } from 'lucide-react'
 import { api, type ConversationTurn } from '../api'
-import { Button, Card, MicRecorder, Select, playTTS, useToast } from '../ui'
+import { Button, Card, MicRecorder, Select, Thinking, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
 interface Msg { role: 'user' | 'assistant'; content: string }
+
+// Marca una burbuja del asistente que aún se está generando (muestra el estado "pensando").
+const THINKING = ''
+const isThinking = (c: string) => c === THINKING || c === ''
 
 export default function Conversation({ level, scenarios }: TabProps) {
   const toast = useToast()
@@ -24,12 +28,13 @@ export default function Conversation({ level, scenarios }: TabProps) {
 
   async function start() {
     setLoading(true)
+    setFb(null)
+    setMessages([{ role: 'assistant', content: THINKING }])   // burbuja "pensando"
     try {
       const { reply } = await api.conversationStart(level, scenario, detail)
       setMessages([{ role: 'assistant', content: reply }])
-      setFb(null)
       playTTS(reply, { lang: 'en' })
-    } catch (e: any) { toast(e.message, 'error') } finally { setLoading(false) }
+    } catch (e: any) { setMessages([]); toast(e.message, 'error') } finally { setLoading(false) }
   }
 
   async function send(blob: Blob) {
@@ -41,6 +46,8 @@ export default function Conversation({ level, scenarios }: TabProps) {
     form.append('history', JSON.stringify(messages))
     form.append('audio', blob, 'turn.webm')
     let userText = ''
+    // Burbuja "pensando" inmediata: cubre la transcripción y la generación.
+    setMessages((m) => [...m, { role: 'assistant', content: THINKING }])
     try {
       const res = await fetch('/api/conversation/turn_stream', { method: 'POST', body: form })
       if (!res.ok || !res.body) {
@@ -63,7 +70,8 @@ export default function Conversation({ level, scenarios }: TabProps) {
           const ev = JSON.parse(dataLine.slice(6))
           if (ev.type === 'user') {
             userText = ev.text
-            setMessages((m) => [...m, { role: 'user', content: ev.text }, { role: 'assistant', content: '…' }])
+            // Inserta lo que dijo el usuario JUSTO antes de la burbuja "pensando".
+            setMessages((m) => { const nm = [...m]; nm.splice(nm.length - 1, 0, { role: 'user', content: ev.text }); return nm })
           } else if (ev.type === 'partial') {
             setMessages((m) => { const nm = [...m]; nm[nm.length - 1] = { role: 'assistant', content: ev.reply }; return nm })
           } else if (ev.type === 'done') {
@@ -71,22 +79,29 @@ export default function Conversation({ level, scenarios }: TabProps) {
             setFb({ user_text: userText, reply: ev.reply, corrections: ev.corrections, vocab_tip: ev.vocab_tip, pron_words: ev.pron_words })
             playTTS(ev.reply, { lang: 'en' })
           } else if (ev.type === 'error') {
+            setMessages((m) => (m.length && m[m.length - 1].role === 'assistant' && isThinking(m[m.length - 1].content) ? m.slice(0, -1) : m))
             toast(ev.message, 'error')
           }
         }
       }
-    } catch (e: any) { toast(e.message, 'error') } finally { setLoading(false) }
+    } catch (e: any) {
+      // Quita la burbuja "pensando" si quedó colgada por un error.
+      setMessages((m) => (m.length && m[m.length - 1].role === 'assistant' && isThinking(m[m.length - 1].content) ? m.slice(0, -1) : m))
+      toast(e.message, 'error')
+    } finally { setLoading(false) }
   }
 
   async function resend(correctedText: string) {
     setLoading(true)
+    const snapshot = messages
+    const base = messages.slice(0, -2)
+    setMessages([...base, { role: 'user', content: correctedText }, { role: 'assistant', content: THINKING }])
     try {
-      const base = messages.slice(0, -2)
       const data = await api.conversationTurnText(level, scenario, base, correctedText, detail)
       setMessages([...base, { role: 'user', content: data.user_text }, { role: 'assistant', content: data.reply }])
       setFb(data)
       playTTS(data.reply, { lang: 'en' })
-    } catch (e: any) { toast(e.message, 'error') } finally { setLoading(false) }
+    } catch (e: any) { setMessages(snapshot); toast(e.message, 'error') } finally { setLoading(false) }
   }
 
   function onRecorded(blob: Blob) {
@@ -105,7 +120,7 @@ export default function Conversation({ level, scenarios }: TabProps) {
             <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ${
                 m.role === 'user' ? 'bg-accent text-accentFg' : 'bg-surface2 text-text'}`}>
-                {m.content}
+                {m.role === 'assistant' && isThinking(m.content) ? <Thinking /> : m.content}
               </div>
             </div>
           ))}

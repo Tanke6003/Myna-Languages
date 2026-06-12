@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Sparkles, CheckCircle2, Volume2 } from 'lucide-react'
 import { api, type ReadingReport } from '../api'
-import { Button, Card, HintToggle, MicRecorder, TtsButton, playTTS, useToast } from '../ui'
+import { Button, Card, HintToggle, MicRecorder, Thinking, TtsButton, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -44,7 +44,9 @@ export default function Reading({ level, award }: TabProps) {
             className="flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm" />
           <Button onClick={newSentence} loading={loadingNew}><Sparkles size={16} />{t('btn.newSentence')}</Button>
         </div>
-        {sentence ? (
+        {loadingNew ? (
+          <div className="rounded-xl bg-surface2 p-4"><Thinking /></div>
+        ) : sentence ? (
           <div className="rounded-xl bg-surface2 p-4">
             <div className="text-lg font-bold" translate="no">{sentence}</div>
             <div className="mt-1 text-sm text-muted">{ipa}</div>

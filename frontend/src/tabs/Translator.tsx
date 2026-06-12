@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Languages, Pencil, RefreshCw, X, Volume2 } from 'lucide-react'
 import { api, type TranslationDetails } from '../api'
-import { Button, Card, Segmented, Spinner, TtsButton, playTTS, useToast } from '../ui'
+import { Button, Card, Segmented, Thinking, TtsButton, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -53,6 +53,8 @@ export default function Translator(_props: TabProps) {
           <Button onClick={() => translate()} loading={loading}><Languages size={16} />{t('btn.translate')}</Button>
         </div>
 
+        {loading && !output && <div className="rounded-xl bg-surface2 p-4"><Thinking /></div>}
+
         {output && (
           <div className="flex flex-col gap-2">
             <div className="rounded-xl bg-surface2 p-4 text-base" translate="no">{output}</div>
@@ -81,7 +83,7 @@ export default function Translator(_props: TabProps) {
 
             {(detailsLoading || (details && (details.synonyms.length > 0 || details.examples.length > 0))) && (
               <div className="flex flex-col gap-3 rounded-xl border border-line p-3 text-sm">
-                {detailsLoading && <div className="flex items-center gap-2 text-muted"><Spinner size={14} />…</div>}
+                {detailsLoading && <Thinking />}
                 {details && details.synonyms.length > 0 && (
                   <div>
                     <div className="mb-1 font-bold">{t('trans.synonyms')}</div>

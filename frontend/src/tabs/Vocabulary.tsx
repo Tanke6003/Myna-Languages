@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Dices, CheckCircle2, XCircle } from 'lucide-react'
 import { api, type VocabExercise } from '../api'
-import { Button, Card, HintToggle, useToast } from '../ui'
+import { Button, Card, HintToggle, Thinking, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -60,8 +60,9 @@ export default function Vocabulary({ level, award }: TabProps) {
           </div>
           <Button onClick={newEx} loading={loadingNew}><Dices size={16} />{t('btn.newExercise')}</Button>
         </div>
-        {!ex && <p className="text-sm text-muted">{t('vocab.startHint')}</p>}
-        {ex && (
+        {loadingNew && <div className="rounded-xl bg-surface2 p-4"><Thinking /></div>}
+        {!ex && !loadingNew && <p className="text-sm text-muted">{t('vocab.startHint')}</p>}
+        {ex && !loadingNew && (
           <div className="flex flex-col gap-3">
             <div className="text-sm text-muted" translate="no">{ex.question}</div>
             <div className="rounded-xl bg-surface2 p-4 text-lg font-bold" translate="no">{ex.prompt}</div>

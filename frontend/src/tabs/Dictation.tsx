@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Headphones, Volume2, CheckCircle2 } from 'lucide-react'
 import { api } from '../api'
-import { Button, Card, playTTS, useToast } from '../ui'
+import { Button, Card, Thinking, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -61,6 +61,7 @@ export default function Dictation({ level, award }: TabProps) {
             </>
           )}
         </div>
+        {loading && <div className="rounded-xl bg-surface2 p-3"><Thinking /></div>}
         <textarea value={typed} onChange={(e) => setTyped(e.target.value)} rows={2}
           placeholder={t('dict.placeholder')}
           className="rounded-xl border border-line bg-surface px-3 py-2.5 text-sm" />

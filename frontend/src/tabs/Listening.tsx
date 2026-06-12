@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Ear, Volume2, CheckCircle2, XCircle } from 'lucide-react'
 import { api, type ListeningExercise } from '../api'
-import { Button, Card, playTTS, useToast } from '../ui'
+import { Button, Card, Thinking, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -54,7 +54,9 @@ export default function Listening({ level, award }: TabProps) {
           )}
         </div>
 
-        {ex && (
+        {loading && <div className="rounded-xl bg-surface2 p-4"><Thinking /></div>}
+
+        {ex && !loading && (
           <div className="flex flex-col gap-3">
             <div className="text-base font-bold" translate="no">{ex.question}</div>
             <div className="flex flex-col gap-2" translate="no">

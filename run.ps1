@@ -18,6 +18,43 @@ if (Test-Path ".\selected_model.txt") {
 $py = ".\.venv\Scripts\python.exe"
 if (-not (Test-Path $py)) { exit 1 }   # instalacion incompleta; sin ventana que mostrar
 
+# --- Asegura que Ollama (la IA, local) este corriendo ---
+# Sin esto, si el servidor de Ollama aun no levanto su puerto, el primer turno falla con
+# "[WinError 10061] ... el equipo de destino denego la conexion". Si no responde, lo arrancamos
+# (ollama serve, sin ventana) y esperamos a que escuche en 127.0.0.1:11434.
+function Test-Ollama {
+  try { Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:11434/api/version' -TimeoutSec 2 | Out-Null; $true }
+  catch { $false }
+}
+
+if (-not (Test-Ollama)) {
+  $launched = $false
+  # 1) Preferimos la app de Ollama (GUI, SIN consola): arranca el servidor en segundo plano
+  #    de forma 100% silenciosa y restaura el icono de la bandeja.
+  $ollamaApp = Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama app.exe'
+  if (Test-Path $ollamaApp) {
+    Start-Process -FilePath $ollamaApp
+    $launched = $true
+  } else {
+    # 2) Fallback: 'ollama serve' en ventana oculta (app de consola).
+    $ollamaExe = (Get-Command ollama -ErrorAction SilentlyContinue).Source
+    if (-not $ollamaExe) {
+      $cand = Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'
+      if (Test-Path $cand) { $ollamaExe = $cand }
+    }
+    if ($ollamaExe) {
+      Start-Process -WindowStyle Hidden -FilePath $ollamaExe -ArgumentList 'serve'
+      $launched = $true
+    }
+  }
+  if ($launched) {
+    for ($i = 0; $i -lt 60; $i++) {     # hasta ~30 s a que el servidor responda
+      if (Test-Ollama) { break }
+      Start-Sleep -Milliseconds 500
+    }
+  }
+}
+
 $url = "http://127.0.0.1:8000"
 
 # --- Arranca el servidor OCULTO (proceso aparte para poder detenerlo al cerrar la app) ---

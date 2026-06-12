@@ -1,0 +1,8 @@
+# Saltos de linea por sistema. Los scripts de shell se EJECUTAN en Linux: deben quedar en LF
+# aunque se editen o empaqueten desde Windows (si quedan en CRLF, fallan al arrancar).
+*.sh   text eol=lf
+
+# Scripts propios de Windows: CRLF.
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.vbs  text eol=crlf

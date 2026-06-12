@@ -16,7 +16,8 @@ echo "RAM: ${RAM_GB} GB | NVIDIA: $HAS_NVIDIA | AMD: $HAS_AMD"
 if [ "$HAS_NVIDIA" = "1" ]; then MODEL="qwen2.5:7b"
 elif [ "$HAS_AMD" = "1" ] && [ "$RAM_GB" -ge 12 ]; then MODEL="qwen2.5:7b"
 elif [ "$RAM_GB" -ge 16 ]; then MODEL="qwen2.5:7b"
-else MODEL="qwen2.5:3b"; fi
+elif [ "$RAM_GB" -ge 10 ]; then MODEL="qwen2.5:3b"
+else MODEL="qwen2.5:1.5b"; fi
 echo "Modelo elegido: $MODEL"
 
 # --- 3) Python venv + dependencias ---

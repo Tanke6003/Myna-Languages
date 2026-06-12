@@ -57,6 +57,8 @@ def _available_models():
 
 # Catálogo por defecto (built-in). Se puede sobreescribir con models_catalog.json o TUTOR_CATALOG_URL.
 MODEL_CATALOG = [
+    {"name": "qwen2.5:0.5b", "gb": 1, "label": "Ultraligero (mínimo usable)", "family": "qwen"},
+    {"name": "qwen2.5:1.5b", "gb": 2, "label": "Muy ligero (CPU modesta)", "family": "qwen"},
     {"name": "qwen2.5:3b", "gb": 3, "label": "Rápido", "family": "qwen"},
     {"name": "qwen2.5:7b", "gb": 5, "label": "Equilibrado", "family": "qwen"},
     {"name": "qwen2.5:14b", "gb": 9, "label": "Calidad alta", "family": "qwen"},

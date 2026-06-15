@@ -10,15 +10,16 @@ router = APIRouter(tags=["progress"])
 
 _CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"]
 _LEVELUP_NEED = 12  # ejercicios mínimos en el nivel (techo de calidad global)
+_LEVELUP_AVG = 85   # media global mínima (%) para subir de nivel / ganar la medalla
 
 # Áreas de destreza (CEFR): para subir de nivel hay que practicar TODAS, no solo una.
 # Evita que se suba de nivel haciendo, p. ej., solo "Corregir texto". Cada área agrupa varios
 # módulos (kind) y exige un mínimo de práctica y una media decente.
 _SKILL_AREAS = {
     "speak":  ("conversation", "reading", "shadowing"),
-    "listen": ("listening", "dictation"),
-    "write":  ("text",),
-    "vocab":  ("vocab",),
+    "listen": ("listening", "dictation", "minimal"),
+    "write":  ("text", "writing"),
+    "vocab":  ("vocab", "concept"),
 }
 _AREA_NEED = 3      # ejercicios mínimos por área
 _AREA_FLOOR = 80    # media mínima por área
@@ -86,7 +87,7 @@ def _area_breakdown(level):
 
 
 def _global_ok(st):
-    return st["count"] >= _LEVELUP_NEED and (st["avg_score"] or 0) >= 85
+    return st["count"] >= _LEVELUP_NEED and (st["avg_score"] or 0) >= _LEVELUP_AVG
 
 
 def _mastered(level):
@@ -107,7 +108,8 @@ def _levelup_data(level):
     areas, areas_ok = _area_breakdown(level)
     ready = bool(nxt) and _global_ok(st) and areas_ok
     return {"level": level, "next_level": nxt, "ready": ready, "need": _LEVELUP_NEED,
-            "count": st["count"], "avg_score": st["avg_score"], "areas": areas}
+            "avg_need": _LEVELUP_AVG, "count": st["count"], "avg_score": st["avg_score"],
+            "areas": areas}
 
 
 @router.get("/levelup")

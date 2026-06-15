@@ -30,6 +30,9 @@ export interface ReadingReport {
 
 export interface TextCheck { correct: boolean; fixed: string; feedback: string }
 
+export interface WritingExercise { kind: string; prompt: string; instruction: string }
+export interface WritingCheck { correct: boolean; score: number | null; better: string; feedback: string }
+
 export interface ActivityTotal { kind: string; count: number; avg_score: number | null }
 export interface ActivityItem {
   ts: string; kind: string; level: string | null; score: number | null; correct: number | null
@@ -63,6 +66,8 @@ export interface SystemInfo {
   model_catalog: CatalogModel[]
   llm_device: string
   gpu_available: boolean
+  tts_voice: string
+  tts_voices: { id: string; label: string }[]
 }
 export interface CatalogModel {
   name: string
@@ -88,6 +93,14 @@ export interface ListeningExercise {
   explain: string
 }
 
+export interface MinimalExercise {
+  word: string
+  options: string[]
+  answer: string
+  explain: string
+  ipa: Record<string, string>
+}
+
 export interface TranslationDetails {
   word: string
   synonyms: string[]
@@ -96,6 +109,23 @@ export interface TranslationDetails {
 
 export interface Flashcard { id: number; front: string; back: string }
 export interface FlashState { total: number; due: number; card: Flashcard | null; added?: number }
+
+export interface Concept { id: number; phrase: string; meaning: string; example: string; reps: number }
+export interface ConceptsState { items: Concept[]; count: number }
+export interface ConceptExercise {
+  empty: boolean
+  id?: number
+  phrase?: string
+  meaning?: string
+  example?: string
+  type?: 'gap' | 'choice' | 'produce'
+  prompt?: string
+  question?: string
+  options?: string[]
+  answer?: string
+  explain?: string
+}
+export interface ConceptCheck { correct: boolean; better: string; feedback: string }
 
 export interface MixedItem {
   empty: boolean
@@ -119,6 +149,7 @@ export interface LevelUp {
   next_level: string | null
   ready: boolean
   need: number
+  avg_need: number
   count: number
   avg_score: number | null
   areas: LevelArea[]
@@ -176,6 +207,8 @@ export const api = {
     postJSON('/api/settings/reminder', { enabled, time }),
   setDevice: (device: string): Promise<{ llm_device: string }> =>
     postJSON('/api/settings/device', { device }),
+  setVoice: (voice: string): Promise<{ tts_voice: string }> =>
+    postJSON('/api/settings/voice', { voice }),
   deleteModel: (model: string): Promise<{ ok: boolean }> =>
     postJSON('/api/settings/delete', { model }),
   pullModel: async (
@@ -212,6 +245,16 @@ export const api = {
   flashcardSeed: (): Promise<FlashState> =>
     fetch('/api/flashcards/seed', { method: 'POST' }).then(handle),
 
+  concepts: (): Promise<ConceptsState> => fetch('/api/concepts').then(handle),
+  conceptAdd: (phrase: string, example = ''): Promise<ConceptsState> =>
+    postJSON('/api/concepts/add', { phrase, example }),
+  conceptDelete: (id: number): Promise<ConceptsState> =>
+    postJSON('/api/concepts/delete', { id }),
+  conceptPractice: (level: string, type = ''): Promise<ConceptExercise> =>
+    postJSON('/api/concepts/practice', { level, type }),
+  conceptCheck: (phrase: string, sentence: string): Promise<ConceptCheck> =>
+    postJSON('/api/concepts/check', { phrase, sentence }),
+
   mixedNext: (): Promise<MixedItem> => fetch('/api/mixed/next').then(handle),
   mixedResult: (word: string, correct: boolean): Promise<{ ok: boolean }> =>
     postJSON('/api/mixed/result', { word, correct }),
@@ -240,6 +283,11 @@ export const api = {
     level: string, scenario: string, history: unknown, user_text: string, detail = '',
   ): Promise<ConversationTurn> =>
     postJSON('/api/conversation/turn_text', { level, scenario, detail, history, user_text }),
+  conversationTranscribe: (audio: Blob): Promise<{ user_text: string; pron_words: string[] }> => {
+    const f = new FormData()
+    f.append('audio', audio, 'turn.webm')
+    return postForm('/api/conversation/transcribe', f)
+  },
 
   readingSentence: (level: string, topic: string): Promise<{ sentence: string; ipa: string }> =>
     postJSON('/api/reading/sentence', { level, topic }),
@@ -255,10 +303,19 @@ export const api = {
   textCheck: (original: string, correction: string): Promise<TextCheck> =>
     postJSON('/api/text/check', { original, correction }),
 
+  writingNew: (level: string, kind: string): Promise<WritingExercise> =>
+    postJSON('/api/writing/new', { level, kind }),
+  writingCheck: (
+    kind: string, prompt: string, instruction: string, answer: string, level: string,
+  ): Promise<WritingCheck> =>
+    postJSON('/api/writing/check', { kind, prompt, instruction, answer, level }),
+
   vocabNew: (level: string, kind: string): Promise<VocabExercise> =>
     postJSON('/api/vocab/new', { level, kind }),
   listeningNew: (level: string): Promise<ListeningExercise> =>
     postJSON('/api/listening/new', { level }),
+  minimalNew: (level: string): Promise<MinimalExercise> =>
+    postJSON('/api/minimal/new', { level }),
 
   translate: (text: string, direction: string, note = ''): Promise<{ translation: string }> =>
     postJSON('/api/translate', { text, direction, note }),
@@ -267,9 +324,10 @@ export const api = {
 }
 
 // URL para reproducir audio TTS (cacheado en el backend).
-export function ttsUrl(text: string, opts: { lang?: string; slow?: boolean } = {}) {
+export function ttsUrl(text: string, opts: { lang?: string; slow?: boolean; voice?: string } = {}) {
   const p = new URLSearchParams({ text })
   if (opts.lang) p.set('lang', opts.lang)
   if (opts.slow) p.set('slow', 'true')
+  if (opts.voice) p.set('voice', opts.voice)
   return `/api/tts?${p.toString()}`
 }

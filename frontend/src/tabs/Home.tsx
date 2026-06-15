@@ -17,7 +17,7 @@ export default function Home({ onOpen, onLevelUp, level, refreshKey }: Props) {
   const [data, setData] = useState<HomeData | null>(null)
   useEffect(() => { api.home(level).then(setData).catch(() => {}) }, [level, refreshKey])
 
-  const recs: { Icon: typeof Mic; text: string; btn?: string; action?: () => void }[] = []
+  const recs: { Icon: typeof Mic; text: string; hint?: string; btn?: string; action?: () => void }[] = []
   if (data) {
     const lu = data.levelup
     if (lu.ready && lu.next_level) {
@@ -42,7 +42,13 @@ export default function Home({ onOpen, onLevelUp, level, refreshKey }: Props) {
           return `${emoji[a.area] || ''} ${reps}${tail}`
         })
         .join(' · ')
-      recs.push({ Icon: TrendingUp, text: `${t('rec.progressTo')} ${lu.next_level}: ${breakdown}` })
+      const a0 = lu.areas[0]
+      const hint = t('rec.progressHint')
+        .replace('{areaNeed}', String(a0?.need ?? 3))
+        .replace('{floor}', String(a0?.floor ?? 80))
+        .replace('{need}', String(lu.need))
+        .replace('{avg}', String(lu.avg_need))
+      recs.push({ Icon: TrendingUp, text: `${t('rec.progressTo')} ${lu.next_level}: ${breakdown}`, hint })
     }
   }
   const shown = recs.slice(0, 3)
@@ -63,7 +69,10 @@ export default function Home({ onOpen, onLevelUp, level, refreshKey }: Props) {
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-accentFg">
                   <r.Icon size={18} />
                 </span>
-                <span className="flex-1 text-sm font-semibold">{r.text}</span>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold">{r.text}</div>
+                  {r.hint && <div className="mt-1 text-xs font-normal text-muted">{r.hint}</div>}
+                </div>
                 {r.btn && r.action && (
                   <Button onClick={r.action}>{r.btn}<ArrowRight size={15} /></Button>
                 )}

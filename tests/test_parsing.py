@@ -37,3 +37,23 @@ def test_parse_conversation_alternatives_use_o():
     raw = "REPLY: Nice. What's next?\nCORRECTION: a lot of work | a little / lots of work | nota"
     d = llm.parse_conversation_raw(raw)
     assert " o " in d["corrections"][0]["correction"]   # '/' se convierte en ' o '
+
+
+def test_parse_conversation_no_reply_label_does_not_leak_fields():
+    """Si el modelo NO etiqueta REPLY y deja la respuesta suelta, la burbuja debe mostrar SOLO
+    esa respuesta, nunca CORRECTION/TIP/SCORE (regresión del volcado crudo)."""
+    raw = ("CORRECTION: leave me a peanut noir | I'll get you a Pinot Noir | corrige la frase\n"
+           "TIP: Remember to use 'you' with a customer.\n"
+           "SCORE: 70\n"
+           "I will bring you the Chianti and the Pinot Noir. Enjoy your meal!")
+    d = llm.parse_conversation_raw(raw)
+    assert d["reply"] == "I will bring you the Chianti and the Pinot Noir. Enjoy your meal!"
+    assert "CORRECTION" not in d["reply"] and "SCORE" not in d["reply"] and "TIP" not in d["reply"]
+    assert d["score"] == 70
+    assert d["corrections"][0]["correction"] == "I'll get you a Pinot Noir"
+
+
+def test_parse_conversation_inline_field_leak_is_trimmed():
+    """Si una etiqueta se cuela en la misma línea de REPLY, se recorta."""
+    d = llm.parse_conversation_raw("REPLY: Sure, here you go. CORRECTION: a | b | c\nSCORE: 50")
+    assert d["reply"] == "Sure, here you go."

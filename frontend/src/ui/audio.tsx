@@ -26,7 +26,7 @@ export function useAudioSpeed() {
   return s
 }
 
-export function playTTS(text: string, opts: { lang?: string; slow?: boolean } = {}) {
+export function playTTS(text: string, opts: { lang?: string; slow?: boolean; voice?: string } = {}) {
   const audio = new Audio(ttsUrl(text, opts))
   audio.defaultPlaybackRate = _speed
   audio.playbackRate = _speed

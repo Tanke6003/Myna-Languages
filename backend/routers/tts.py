@@ -8,8 +8,8 @@ router = APIRouter(tags=["tts"])
 
 
 @router.get("/tts")
-def tts_endpoint(text: str, lang: str = "", slow: bool = False):
-    path = tts_service.synthesize(text, lang=(lang or None), slow=slow)
+def tts_endpoint(text: str, lang: str = "", slow: bool = False, voice: str = ""):
+    path = tts_service.synthesize(text, lang=(lang or None), slow=slow, voice=(voice or None))
     if not path:
         raise HTTPException(503, "Audio no disponible (¿sin internet para edge-tts?).")
     media = "audio/wav" if path.endswith(".wav") else "audio/mpeg"

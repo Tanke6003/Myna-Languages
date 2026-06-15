@@ -118,6 +118,20 @@ MODEL_CATALOG = [
     {"name": "deepseek-llm:7b", "gb": 5, "label": "Alternativa chat (DeepSeek)", "family": "deepseek"},
 ]
 
+# Voces TTS (edge-tts) que le hablan al usuario. Curado: acento + sexo. Etiqueta neutra de idioma.
+VOICE_CATALOG = [
+    {"id": "en-US-AriaNeural", "label": "Aria — US (♀)"},
+    {"id": "en-US-JennyNeural", "label": "Jenny — US (♀)"},
+    {"id": "en-US-GuyNeural", "label": "Guy — US (♂)"},
+    {"id": "en-US-EricNeural", "label": "Eric — US (♂)"},
+    {"id": "en-GB-SoniaNeural", "label": "Sonia — UK (♀)"},
+    {"id": "en-GB-RyanNeural", "label": "Ryan — UK (♂)"},
+    {"id": "en-AU-NatashaNeural", "label": "Natasha — AU (♀)"},
+    {"id": "en-AU-WilliamNeural", "label": "William — AU (♂)"},
+    {"id": "en-HK-YanNeural", "label": "Yan — Hong Kong 🇭🇰 (♀)"},
+    {"id": "en-HK-SamNeural", "label": "Sam — Hong Kong 🇭🇰 (♂)"},
+]
+
 _CATALOG_CACHE = None
 
 
@@ -215,6 +229,8 @@ def system_info():
         "model_catalog": catalog,
         "llm_device": runtime.get_device(),
         "gpu_available": hw["cuda"] > 0,
+        "tts_voice": runtime.get_voice(),
+        "tts_voices": VOICE_CATALOG,
     }
 
 
@@ -232,6 +248,16 @@ def set_llm_device(body: dict = Body(...)):
     """Cambia el dispositivo del LLM: 'gpu' (usa GPU si puede) o 'cpu' (forzado)."""
     device = runtime.set_device(body.get("device", "gpu"))
     return {"llm_device": device}
+
+
+@router.post("/settings/voice")
+def set_tts_voice(body: dict = Body(...)):
+    """Fija la voz inglesa que le habla al usuario (se persiste en selected_voice.txt)."""
+    voice = (body.get("voice") or "").strip()
+    if not voice:
+        raise HTTPException(400, "Falta la voz.")
+    runtime.set_voice(voice)
+    return {"tts_voice": runtime.get_voice()}
 
 
 @router.post("/settings/whisper")

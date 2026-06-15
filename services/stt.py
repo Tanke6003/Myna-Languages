@@ -10,7 +10,9 @@ _load_lock = threading.Lock()   # evita cargar el modelo dos veces en paralelo
 _infer_lock = threading.Lock()  # WhisperModel.transcribe no es seguro en paralelo
 _WHISPER_FILE = os.path.join(BASE_DIR, "selected_whisper.txt")
 # Tamaños disponibles (más grande = más preciso pero más lento)
-WHISPER_SIZES = ["tiny.en", "base.en", "small.en", "medium.en"]
+# Los '.en' (solo inglés) llegan hasta medium. 'large-v3-turbo'/'large-v3' son multilingües y
+# más precisos (más pesados y descargan más la 1ª vez); van bien en GPU.
+WHISPER_SIZES = ["tiny.en", "base.en", "small.en", "medium.en", "large-v3-turbo", "large-v3"]
 
 
 def current_model_name():

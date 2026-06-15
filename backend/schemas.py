@@ -21,6 +21,19 @@ class TextCheckReq(BaseModel):
     correction: str
 
 
+class WritingNewReq(BaseModel):
+    level: str
+    kind: str  # "rewrite" | "translate" | "complete" | "paragraph"
+
+
+class WritingCheckReq(BaseModel):
+    kind: str
+    prompt: str
+    instruction: str = ""
+    answer: str
+    level: str = ""
+
+
 class TranslateReq(BaseModel):
     text: str
     direction: str = "Auto"  # "Auto" | "ES→EN" | "EN→ES"
@@ -37,6 +50,25 @@ class ConversationTextReq(BaseModel):
     detail: str = ""
     history: list[dict] = []
     user_text: str           # texto (posiblemente corregido por el usuario) a reenviar
+
+
+class ConceptAddReq(BaseModel):
+    phrase: str
+    example: str = ""
+
+
+class ConceptPracticeReq(BaseModel):
+    level: str
+    type: str = ""   # "gap" | "choice" | "produce" | "" (aleatorio)
+
+
+class ConceptCheckReq(BaseModel):
+    phrase: str
+    sentence: str
+
+
+class ConceptDeleteReq(BaseModel):
+    id: int
 
 
 class AwardReq(BaseModel):

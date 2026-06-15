@@ -1,6 +1,6 @@
 import {
   MessageCircle, Volume2, Repeat2, Headphones, Ear, SpellCheck, Brain, Layers, Shuffle,
-  Languages, BarChart3, SlidersHorizontal,
+  Languages, BarChart3, SlidersHorizontal, Lightbulb, AudioLines, PenLine,
 } from 'lucide-react'
 
 export type Category = 'speak' | 'listen' | 'write' | 'vocab' | 'tools'
@@ -18,8 +18,11 @@ export const MODULES: ModuleDef[] = [
   { id: 'shadowing', cat: 'speak', Icon: Repeat2, needsCtx: true },
   { id: 'dictation', cat: 'listen', Icon: Headphones, needsCtx: true },
   { id: 'listening', cat: 'listen', Icon: Ear, needsCtx: true },
+  { id: 'minimal', cat: 'listen', Icon: AudioLines, needsCtx: true },
   { id: 'text', cat: 'write', Icon: SpellCheck, needsCtx: true },
+  { id: 'writing', cat: 'write', Icon: PenLine, needsCtx: true },
   { id: 'vocab', cat: 'vocab', Icon: Brain, needsCtx: true },
+  { id: 'concepts', cat: 'vocab', Icon: Lightbulb, needsCtx: true },
   { id: 'flashcards', cat: 'vocab', Icon: Layers },
   { id: 'mixed', cat: 'vocab', Icon: Shuffle },
   { id: 'trans', cat: 'tools', Icon: Languages, needsCtx: true },

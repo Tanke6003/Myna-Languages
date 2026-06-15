@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Repeat2, Volume2, CheckCircle2, Eye } from 'lucide-react'
 import { api, type ReadingReport } from '../api'
-import { Button, Card, MicRecorder, Thinking, SpeedControl, playTTS, useToast } from '../ui'
+import { Button, Card, MicRecorder, Thinking, SpeedControl, ReportRepeat, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -51,6 +51,7 @@ export default function Shadowing({ level, award }: TabProps) {
                 <Volume2 size={16} />{t('btn.slow')}
               </Button>
               <SpeedControl />
+              <ReportRepeat onReport={newSentence} loading={loadingNew} className="ml-auto self-center" />
             </>
           )}
         </div>

@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { MemoryStick, Cpu, Monitor, Mic, RefreshCw, Check, Download, Star, Trash2, Info, Bell } from 'lucide-react'
+import { Volume2 } from 'lucide-react'
 import { api, type SystemInfo, type Reminder } from '../api'
-import { Button, Card, Segmented, Select, Spinner, useToast } from '../ui'
+import { Button, Card, Segmented, Select, Spinner, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 
 function Row({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
@@ -21,6 +22,7 @@ export default function Settings() {
   const [model, setModel] = useState('')
   const [whisper, setWhisper] = useState('')
   const [device, setDevice] = useState('gpu')
+  const [voice, setVoice] = useState('')
   const [saving, setSaving] = useState(false)
   const [pulling, setPulling] = useState<string | null>(null)
   const [pullPct, setPullPct] = useState<number | null>(null)
@@ -31,6 +33,7 @@ export default function Settings() {
     try {
       const s = await api.system()
       setInfo(s); setModel(s.current_model); setWhisper(s.whisper_model); setDevice(s.llm_device)
+      setVoice(s.tts_voice)
     } catch (e: any) { toast(e.message, 'error') }
   }
   useEffect(() => { load() }, [])
@@ -62,6 +65,16 @@ export default function Settings() {
       setDevice(r.llm_device)
       setInfo((i) => (i ? { ...i, llm_device: r.llm_device } : i))
       toast(`${t('settings.applied')}: ${r.llm_device.toUpperCase()}`, 'success')
+    } catch (e: any) { toast(e.message, 'error') } finally { setSaving(false) }
+  }
+
+  async function applyVoice(chosen: string) {
+    setSaving(true)
+    try {
+      const r = await api.setVoice(chosen)
+      setVoice(r.tts_voice)
+      setInfo((i) => (i ? { ...i, tts_voice: r.tts_voice } : i))
+      toast(t('settings.applied'), 'success')
     } catch (e: any) { toast(e.message, 'error') } finally { setSaving(false) }
   }
 
@@ -200,6 +213,22 @@ export default function Settings() {
         <div className="flex flex-wrap items-center gap-2">
           <Select value={whisper} onChange={setWhisper} options={info.whisper_sizes} className="min-w-44" />
           <Button onClick={() => applyWhisper(whisper)} loading={saving}><Check size={16} />{t('settings.apply')}</Button>
+        </div>
+      </Card>
+
+      {/* Voz del tutor (TTS) */}
+      <Card className="flex flex-col gap-3">
+        <h3 className="flex items-center gap-2 font-extrabold"><Volume2 size={18} className="text-accent" />{t('settings.voice')}</h3>
+        <p className="text-sm text-muted">{t('settings.voiceHint')}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={voice} onChange={(e) => setVoice(e.target.value)} translate="no"
+            className="min-w-44 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm font-bold text-text">
+            {info.tts_voices.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+          </select>
+          <Button variant="outline" onClick={() => playTTS(t('settings.voiceSample'), { lang: 'en', voice })}>
+            <Volume2 size={16} />{t('settings.voiceTest')}
+          </Button>
+          <Button onClick={() => applyVoice(voice)} loading={saving}><Check size={16} />{t('settings.apply')}</Button>
         </div>
       </Card>
 

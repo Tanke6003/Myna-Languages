@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Sparkles, CheckCircle2, Volume2 } from 'lucide-react'
 import { api, type ReadingReport } from '../api'
-import { Button, Card, HintToggle, MicRecorder, Thinking, TtsButton, SpeedControl, playTTS, useToast } from '../ui'
+import { Button, Card, HintToggle, MicRecorder, Thinking, TtsButton, SpeedControl, ReportRepeat, playTTS, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -54,6 +54,7 @@ export default function Reading({ level, award }: TabProps) {
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <TtsButton text={sentence} lang="en" slow label={t('btn.hearModel')} />
               <SpeedControl />
+              <ReportRepeat onReport={newSentence} loading={loadingNew} className="ml-auto" />
             </div>
           </div>
         ) : <p className="text-sm text-muted">{t('read.startHint')}</p>}

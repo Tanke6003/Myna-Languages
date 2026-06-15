@@ -39,6 +39,21 @@ def conversation_start(level: str = Form(...), scenario: str = Form(""), detail:
     return {"reply": llm.opening_question(level, _scenario_instruction(scenario, detail))}
 
 
+@router.post("/conversation/transcribe")
+def conversation_transcribe(audio: UploadFile = File(...)):
+    """Solo transcribe el audio (sin llamar al tutor): para revisar/corregir el texto antes
+    de enviarlo. Evita que un error de Whisper (ruido, pronunciación) mande algo que no dijiste."""
+    path = save_temp(audio)
+    try:
+        result = stt.transcribe(path, word_timestamps=True)
+    finally:
+        os.remove(path)
+    user_text = result["text"]
+    if not user_text:
+        raise HTTPException(422, "No te entendí. Inténtalo otra vez.")
+    return {"user_text": user_text, "pron_words": _low_conf_words(result["words"])}
+
+
 @router.post("/conversation/turn")
 def conversation_turn(
     level: str = Form(...),

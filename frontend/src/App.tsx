@@ -13,8 +13,11 @@ import Reading from './tabs/Reading'
 import Shadowing from './tabs/Shadowing'
 import Dictation from './tabs/Dictation'
 import Listening from './tabs/Listening'
+import MinimalPairs from './tabs/MinimalPairs'
 import TextCorrection from './tabs/TextCorrection'
+import Writing from './tabs/Writing'
 import Vocabulary from './tabs/Vocabulary'
+import Concepts from './tabs/Concepts'
 import Flashcards from './tabs/Flashcards'
 import Mixed from './tabs/Mixed'
 import Translator from './tabs/Translator'
@@ -164,8 +167,11 @@ export default function App() {
           <div className={tab === 'shadowing' ? '' : 'hidden'}><Shadowing {...ctx} /></div>
           <div className={tab === 'dictation' ? '' : 'hidden'}><Dictation {...ctx} /></div>
           <div className={tab === 'listening' ? '' : 'hidden'}><Listening {...ctx} /></div>
+          <div className={tab === 'minimal' ? '' : 'hidden'}><MinimalPairs {...ctx} /></div>
           <div className={tab === 'text' ? '' : 'hidden'}><TextCorrection {...ctx} /></div>
+          <div className={tab === 'writing' ? '' : 'hidden'}><Writing {...ctx} /></div>
           <div className={tab === 'vocab' ? '' : 'hidden'}><Vocabulary {...ctx} /></div>
+          <div className={tab === 'concepts' ? '' : 'hidden'}><Concepts {...ctx} /></div>
           <div className={tab === 'flashcards' ? '' : 'hidden'}><Flashcards /></div>
           <div className={tab === 'mixed' ? '' : 'hidden'}><Mixed {...ctx} active={tab === 'mixed'} /></div>
           <div className={tab === 'trans' ? '' : 'hidden'}><Translator {...ctx} /></div>

@@ -48,6 +48,27 @@ def init_db():
             " reps INTEGER NOT NULL DEFAULT 0,"
             " due TEXT NOT NULL)"
         )
+        c.execute(
+            "CREATE TABLE IF NOT EXISTS concepts ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " phrase TEXT UNIQUE NOT NULL,"
+            " meaning TEXT,"
+            " example TEXT,"
+            " reps INTEGER NOT NULL DEFAULT 0,"
+            " created_ts TEXT NOT NULL)"
+        )
+        # Ejercicios ya mostrados (genérico, por tipo) para no repetirlos. 'kind' identifica
+        # el generador (reading, text, listening, vocab_synonym, concept…) y 'sig' es el texto
+        # normalizado del ejercicio (la frase/prompt/pasaje). Aplica a TODOS los módulos de
+        # ejercicios menos la conversación.
+        c.execute(
+            "CREATE TABLE IF NOT EXISTS seen_exercises ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " kind TEXT NOT NULL,"
+            " sig TEXT NOT NULL,"
+            " ts TEXT NOT NULL)"
+        )
+        c.execute("CREATE INDEX IF NOT EXISTS idx_seen_kind ON seen_exercises (kind, id)")
 
 
 def _row_to_stats(row):
@@ -216,6 +237,82 @@ def fc_review(card_id, grade):
                   (ease, interval, reps, due.isoformat(timespec="seconds"), card_id))
 
 
+# --- Conceptos / expresiones (lista personal del usuario para practicar) ---
+def concept_add(phrase, meaning="", example=""):
+    """Añade una expresión a la lista. Si ya existe, completa significado/ejemplo si vienen."""
+    phrase = (phrase or "").strip()
+    if not phrase:
+        return
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO concepts (phrase, meaning, example, created_ts) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(phrase) DO UPDATE SET "
+            " meaning = CASE WHEN excluded.meaning != '' THEN excluded.meaning ELSE concepts.meaning END,"
+            " example = CASE WHEN excluded.example != '' THEN excluded.example ELSE concepts.example END",
+            (phrase, meaning or "", example or "", _now_iso()),
+        )
+
+
+def concept_existing():
+    with _conn() as c:
+        return {r["phrase"].lower() for r in c.execute("SELECT phrase FROM concepts").fetchall()}
+
+
+def concept_list():
+    with _conn() as c:
+        rows = c.execute("SELECT id, phrase, meaning, example, reps FROM concepts "
+                         "ORDER BY created_ts DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def concept_count():
+    with _conn() as c:
+        return c.execute("SELECT COUNT(*) AS n FROM concepts").fetchone()["n"]
+
+
+def concept_delete(cid):
+    with _conn() as c:
+        c.execute("DELETE FROM concepts WHERE id = ?", (int(cid),))
+
+
+def concept_random():
+    """Elige una expresión para practicar, dando prioridad a las menos practicadas."""
+    with _conn() as c:
+        row = c.execute("SELECT id, phrase, meaning, example, reps FROM concepts "
+                        "ORDER BY reps ASC, RANDOM() LIMIT 1").fetchone()
+    return dict(row) if row else None
+
+
+def concept_bump(cid):
+    """Marca una expresión como practicada una vez más (para rotar la cobertura)."""
+    with _conn() as c:
+        c.execute("UPDATE concepts SET reps = reps + 1 WHERE id = ?", (int(cid),))
+
+
+# --- "Ejercicios ya vistos" (genérico, para no repetir en todos los módulos menos conversación) ---
+def _norm_sig(text):
+    """Firma normalizada de un ejercicio: minúsculas, espacios colapsados, sin signos al borde."""
+    import re
+    return re.sub(r"\s+", " ", (text or "").strip().lower()).strip(" .,!?;:'\"-—")
+
+
+def seen_add(kind, sig):
+    sig = _norm_sig(sig)
+    if not kind or not sig:
+        return
+    with _conn() as c:
+        c.execute("INSERT INTO seen_exercises (kind, sig, ts) VALUES (?, ?, ?)",
+                  (kind, sig, _now_iso()))
+
+
+def seen_recent(kind, n=500):
+    """Firmas vistas recientemente para un tipo (para evitar repetir). Acotado para no crecer sin fin."""
+    with _conn() as c:
+        rows = c.execute("SELECT sig FROM seen_exercises WHERE kind = ? ORDER BY id DESC LIMIT ?",
+                         (kind, n)).fetchall()
+    return {r["sig"] for r in rows}
+
+
 def level_stats(level):
     """Cuántos ejercicios y media de puntuación en un nivel (para sugerir subir de nivel)."""
     with _conn() as c:
@@ -246,7 +343,12 @@ def export_all():
             "SELECT word, count, last_ts FROM missed").fetchall()]
         flashcards = [dict(r) for r in c.execute(
             "SELECT front, back, ease, interval, reps, due FROM flashcards").fetchall()]
-    return {"stats": dict(st), "activity": activity, "missed": missed, "flashcards": flashcards}
+        concepts = [dict(r) for r in c.execute(
+            "SELECT phrase, meaning, example, reps, created_ts FROM concepts").fetchall()]
+        seen = [dict(r) for r in c.execute(
+            "SELECT kind, sig, ts FROM seen_exercises").fetchall()]
+    return {"stats": dict(st), "activity": activity, "missed": missed,
+            "flashcards": flashcards, "concepts": concepts, "seen": seen}
 
 
 def import_all(data):
@@ -257,6 +359,8 @@ def import_all(data):
         c.execute("DELETE FROM activity")
         c.execute("DELETE FROM missed")
         c.execute("DELETE FROM flashcards")
+        c.execute("DELETE FROM concepts")
+        c.execute("DELETE FROM seen_exercises")
         for a in data.get("activity", []):
             c.execute("INSERT INTO activity (ts, kind, level, score, correct) VALUES (?, ?, ?, ?, ?)",
                       (a.get("ts"), a.get("kind"), a.get("level"), a.get("score"), a.get("correct")))
@@ -269,4 +373,17 @@ def import_all(data):
                       (f.get("front"), f.get("back", ""), float(f.get("ease", 2.5)),
                        float(f.get("interval", 0)), int(f.get("reps", 0)),
                        f.get("due") or _now_iso()))
+        for cn in data.get("concepts", []):
+            phrase = (cn.get("phrase") or "").strip()
+            if not phrase:
+                continue
+            c.execute("INSERT OR REPLACE INTO concepts (phrase, meaning, example, reps, created_ts) "
+                      "VALUES (?, ?, ?, ?, ?)",
+                      (phrase, cn.get("meaning", ""), cn.get("example", ""),
+                       int(cn.get("reps", 0)), cn.get("created_ts") or _now_iso()))
+        for sv in data.get("seen", []):
+            kind, sig = (sv.get("kind") or "").strip(), (sv.get("sig") or "").strip()
+            if kind and sig:
+                c.execute("INSERT INTO seen_exercises (kind, sig, ts) VALUES (?, ?, ?)",
+                          (kind, sig, sv.get("ts") or _now_iso()))
     return get_progress()

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Sparkles, CheckCircle2, XCircle } from 'lucide-react'
 import { api, type TextCheck } from '../api'
-import { Button, Card, Thinking, useToast } from '../ui'
+import { Button, Card, Thinking, ReportRepeat, useToast } from '../ui'
 import { useI18n } from '../i18n'
 import type { TabProps } from '../App'
 
@@ -40,7 +40,12 @@ export default function TextCorrection({ level, award }: TabProps) {
         {loadingNew
           ? <div className="rounded-xl bg-surface2 p-4"><Thinking /></div>
           : sentence
-            ? <div className="rounded-xl bg-surface2 p-4 text-lg font-bold" translate="no">{sentence}</div>
+            ? (
+              <div className="flex flex-col gap-2">
+                <div className="rounded-xl bg-surface2 p-4 text-lg font-bold" translate="no">{sentence}</div>
+                <ReportRepeat onReport={newSentence} loading={loadingNew} className="self-end" />
+              </div>
+            )
             : <p className="text-sm text-muted">{t('text.startHint')}</p>}
         <textarea value={fix} onChange={(e) => setFix(e.target.value)} rows={2} placeholder={t('text.placeholder')}
           translate="no" className="rounded-xl border border-line bg-surface px-3 py-2.5 text-sm" />

@@ -64,18 +64,22 @@ def _cache_path(text, voice, rate, ext):
     return os.path.join(AUDIO_DIR, f"{key}.{ext}")
 
 
-def synthesize(text, lang=None, slow=False):
+def synthesize(text, lang=None, slow=False, voice=None):
     """Genera audio del texto y devuelve la ruta del archivo (o None si falla).
 
     lang: "en", "es" o None (detección automática del idioma).
     slow=True habla más despacio (útil para aprender la pronunciación).
+    voice: fuerza una voz concreta (p. ej. para previsualizarla en Ajustes); si no se da,
+           se usa la voz inglesa activa (configurable) o la española según el idioma.
     """
     text = (text or "").strip()
     if not text:
         return None
 
     lang = lang or detect_lang(text)
-    voice = TTS_VOICE_ES if lang == "es" else TTS_VOICE
+    if not voice:
+        from services import runtime
+        voice = TTS_VOICE_ES if lang == "es" else runtime.get_voice()
     rate = "-30%" if slow else "+0%"
     path = _cache_path(text, voice, rate, "mp3")
     if os.path.exists(path):

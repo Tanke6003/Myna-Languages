@@ -5,5 +5,6 @@ export { Spinner, Button, Card, Pill, Segmented, Select, type BtnVariant } from 
 export { Scoreboard } from './Scoreboard'
 export { playTTS, TtsButton, AudioPlayer, SpeedControl, getAudioSpeed, setAudioSpeed, useAudioSpeed, SPEEDS } from './audio'
 export { HintToggle } from './HintToggle'
+export { ReportRepeat } from './ReportRepeat'
 export { MicRecorder } from './MicRecorder'
 export { Thinking } from './Thinking'

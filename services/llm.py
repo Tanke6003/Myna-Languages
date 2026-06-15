@@ -109,10 +109,38 @@ def _conv_messages(history_msgs, user_text, level, scenario=""):
     return messages
 
 
+_CONV_FIELDS = ("REPLY", "CORRECTION", "TIP", "SCORE", "PRON", "VOCAB")
+
+
+def _is_field_line(line):
+    """¿La línea es un campo estructurado (REPLY:, CORRECTION:, ...) y no parte de la respuesta?"""
+    head = line.split(":", 1)[0].strip().upper()
+    return ":" in line and head in _CONV_FIELDS
+
+
+def _clean_reply(text):
+    """Corta cualquier etiqueta de campo que se haya colado en la MISMA línea de la respuesta
+    (p. ej. 'I'll bring it. CORRECTION: ...') para no mostrar nunca la salida cruda."""
+    up = text.upper()
+    cut = len(text)
+    for key in ("CORRECTION:", "TIP:", "SCORE:", "PRON:", "VOCAB:"):
+        i = up.find(key)
+        if i >= 0:
+            cut = min(cut, i)
+    return text[:cut].strip().strip('"').strip()
+
+
 def parse_conversation_raw(raw):
     """Convierte la salida cruda del modelo en {reply, corrections, vocab_tip}."""
     fields = _parse_fields(raw, repeatable=("CORRECTION",))
-    reply = fields.get("REPLY") or raw.strip() or "Could you say that again, please?"
+    reply = _clean_reply(fields.get("REPLY", ""))
+    if not reply:
+        # El modelo no etiquetó la respuesta (o la dejó suelta tras los campos): toma SOLO las
+        # líneas que NO son campos conocidos, para no volcar CORRECTION/TIP/SCORE en la burbuja.
+        leftover = [ln.strip() for ln in (raw or "").splitlines()
+                    if ln.strip() and not _is_field_line(ln)]
+        reply = _clean_reply(" ".join(leftover))
+    reply = reply or "Could you say that again, please?"
 
     # Red de seguridad: el tutor SIEMPRE responde en inglés.
     from services.tts import detect_lang
@@ -371,11 +399,22 @@ _VOCAB_SPECS = {
 }
 
 
-def vocab_exercise(level, kind):
-    """Genera un ejercicio de vocabulario de opción múltiple del tipo indicado."""
+def vocab_exercise(level, kind, avoid=()):
+    """Genera un ejercicio de vocabulario de opción múltiple del tipo indicado.
+
+    avoid: palabras/frases objetivo recientes a NO reutilizar (las pasa el router a partir de
+    lo ya visto). Junto con un tema aleatorio evita que salgan SIEMPRE las mismas palabras
+    (un modelo pequeño tiende a las más comunes si no se le empuja a variar).
+    """
     s = _VOCAB_SPECS.get(kind, _VOCAB_SPECS["synonym"])
+    theme = _theme("")
+    variety = (f"Base the exercise on the topic of {theme} to keep it VARIED (do not always reuse "
+               "the same few common words; prefer fresh, less predictable target words). ")
+    if avoid:
+        variety += ("Do NOT use any of these recent target words — pick a clearly different one: "
+                    + ", ".join(list(avoid)[:20]) + ". ")
     system = (
-        f"{s['intro']} {_cefr_guide(level)} Make the distractors non-obvious and plausible. "
+        f"{s['intro']} {_cefr_guide(level)} {variety}Make the distractors non-obvious and plausible. "
         "Reply using EXACTLY this format, no quotes, no extra text:\n"
         f"PROMPT: {s['prompt']}\n"
         f"QUESTION: {s['question']}\n"
@@ -386,7 +425,7 @@ def vocab_exercise(level, kind):
         "' | '. ANSWER must be one of those 4 and must be the truly correct one, consistent with "
         "EXPLAIN. " + s["extra"]
     )
-    return _multiple_choice(system, "Generate the exercise.")
+    return _multiple_choice(system, f"Generate the exercise about {theme}.")
 
 
 def meaning_exercise(word):
@@ -423,6 +462,56 @@ def meaning_exercise(word):
     return {"options": options, "answer": answer, "explain": f.get("EXPLAIN", "")}
 
 
+def minimal_pairs_exercise(level, avoid=()):
+    """Pares mínimos: una palabra objetivo + palabras que suenan parecido (p. ej. lived/left/live).
+
+    Se reproduce el audio de la palabra objetivo y el alumno elige cuál era entre opciones
+    fácilmente confundibles por sonido. avoid: palabras objetivo recientes a no repetir.
+    """
+    theme = _theme("")
+    extra = f"Loosely relate the target word to the topic of {theme} for variety. "
+    if avoid:
+        extra += "Do NOT use any of these recent target words: " + ", ".join(list(avoid)[:20]) + ". "
+    level_hint = ("Use very common, short words" if level in ("A1", "A2")
+                  else "Common words are best; less frequent ones are fine at C1/C2")
+    system = (
+        "Create a minimal-pair LISTENING exercise for a Spanish-speaking English learner. "
+        "Pick ONE English target word, then 3 OTHER real English words that sound very similar and "
+        "are easily confused with it (differ by a single vowel or consonant sound — e.g. "
+        "lived/left/leave/leaf, ship/sheep/cheap/chip, bad/bed/bat/bet). "
+        f"{level_hint} for CEFR {level}. {extra}"
+        "Reply using EXACTLY this format, no quotes, no extra text:\n"
+        "WORD: <the target word that will be played as audio>\n"
+        "OPTIONS: <opt1> | <opt2> | <opt3> | <opt4>\n"
+        "EXPLAIN: <short explanation in SPANISH of the sound contrast and how to tell them apart>\n"
+        "OPTIONS must contain EXACTLY 4 real, distinct English words INCLUDING the target word, "
+        "separated by ' | '. Every option must be genuinely confusable by sound with the target."
+    )
+    raw = _chat([{"role": "system", "content": system},
+                 {"role": "user", "content": f"Generate the exercise about {theme}."}],
+                temperature=0.9, num_predict=160)
+    f = _parse_fields(raw)
+    word = f.get("WORD", "").strip().strip('"')
+    word = word.split()[0] if word else ""
+    options = [o.strip().strip('"') for o in f.get("OPTIONS", "").split("|")]
+    options = [o for o in options if o]
+    lower = [o.lower() for o in options]
+    if word and word.lower() not in lower:  # garantiza que la palabra objetivo esté entre opciones
+        options.insert(0, word)
+    if len(options) > 4:  # recorta a 4 conservando la palabra objetivo
+        keep = [word] if word else []
+        for o in options:
+            if len(keep) >= 4:
+                break
+            if o.lower() not in [k.lower() for k in keep]:
+                keep.append(o)
+        options = keep
+    if not word and options:
+        word = options[0]
+    random.shuffle(options)
+    return {"word": word, "options": options, "answer": word, "explain": f.get("EXPLAIN", "")}
+
+
 def listening_exercise(level):
     """Genera un pasaje corto en inglés (para escuchar) y una pregunta de comprensión."""
     system = (
@@ -456,6 +545,165 @@ def listening_exercise(level):
         options = keep
     return {"passage": f.get("PASSAGE", ""), "question": f.get("QUESTION", ""),
             "options": options, "answer": answer, "explain": f.get("EXPLAIN", "")}
+
+
+# ----------------------------------------------------------------------------
+# 4b) CONCEPTOS / EXPRESIONES (practicar TU lista de expresiones)
+# ----------------------------------------------------------------------------
+def _concept_tag(phrase, meaning):
+    """Etiqueta legible de la expresión con su significado (si lo hay), para el prompt."""
+    return f"'{phrase}'" + (f" (meaning: {meaning})" if meaning else "")
+
+
+def concept_gap(phrase, meaning, level):
+    """Frase NUEVA con un hueco (___) donde va la expresión; el alumno la escribe."""
+    system = (
+        f"Create a gap-fill exercise to practice the English expression {_concept_tag(phrase, meaning)}. "
+        "Write ONE natural English sentence in a FRESH context that uses the expression, then replace "
+        "ONLY the expression with ___ (a single blank). " + _cefr_guide(level) +
+        " Reply using EXACTLY this format, no quotes, no extra text:\n"
+        "PROMPT: <the sentence with one ___ where the expression goes>\n"
+        "ANSWER: <only the words that fill the blank: the expression, inflected/conjugated to fit>\n"
+        "EXPLAIN: <short explanation in SPANISH of its meaning and how it is used>\n"
+        "The blank ___ must stand exactly where the expression belongs and appear once. "
+        "ANSWER is ONLY the missing words, never the whole sentence."
+    )
+    raw = _chat([{"role": "system", "content": system},
+                 {"role": "user", "content": "Generate the exercise."}],
+                temperature=0.8, num_predict=220)
+    f = _parse_fields(raw)
+    prompt = f.get("PROMPT", "").strip()
+    answer = f.get("ANSWER", "").strip().strip('"') or phrase
+    if "___" not in prompt:  # red de seguridad: si el modelo no dejó el hueco, no es usable
+        prompt = f"___ — {prompt}".strip(" —") or f"Use the expression: ___"
+    return {"prompt": prompt, "answer": answer, "explain": f.get("EXPLAIN", "")}
+
+
+def concept_choice(phrase, meaning, level):
+    """Opción múltiple: frase con hueco + 4 opciones (la expresión + 3 distractores)."""
+    system = (
+        f"Create a multiple-choice gap-fill to practice the English expression "
+        f"{_concept_tag(phrase, meaning)}. Write ONE natural English sentence with a single blank ___ "
+        "where the expression fits, and 4 options where EXACTLY ONE is correct (the target expression, "
+        "correctly inflected) and the other 3 are plausible but wrong similar expressions or phrasal "
+        "verbs. " + _cefr_guide(level) +
+        " Reply using EXACTLY this format, no quotes, no extra text:\n"
+        "PROMPT: <the sentence with one ___>\n"
+        "QUESTION: Which option best fits the blank?\n"
+        "OPTIONS: <opt1> | <opt2> | <opt3> | <opt4>\n"
+        "ANSWER: <the correct option, exactly as in OPTIONS>\n"
+        "EXPLAIN: <short explanation in SPANISH>\n"
+        "OPTIONS must contain EXACTLY 4 items separated by ' | '. ANSWER must be one of them and must "
+        "be the target expression."
+    )
+    return _multiple_choice(system, "Generate the exercise.")
+
+
+def concept_check(phrase, sentence):
+    """Evalúa una frase escrita por el alumno que debe usar la expresión dada."""
+    system = (
+        f"You check whether a learner correctly used the English expression '{phrase}' in their own "
+        "sentence. Reply using EXACTLY this format, no quotes, no extra text:\n"
+        "RESULT: correct OR incorrect\n"
+        "BETTER: <a corrected or more natural version of their sentence (or the same if already good)>\n"
+        "FEEDBACK: <short explanation in SPANISH: did they use the expression well, and what to improve>\n"
+        "Mark it incorrect if the expression is missing, misused, or the sentence is ungrammatical."
+    )
+    raw = _chat([{"role": "system", "content": system},
+                 {"role": "user", "content": f"Expression: {phrase}\nLearner's sentence: {sentence}"}],
+                temperature=0.3, num_predict=220)
+    f = _parse_fields(raw)
+    result = f.get("RESULT", "").lower()
+    # Confiamos en el juicio del modelo (ya tiene orden de marcar incorrecto si falta la
+    # expresión); no comparamos por substring porque la expresión suele ir conjugada
+    # (p. ej. 'come up with' → 'came up with') y daría falsos negativos.
+    correct = result.startswith("correct") or "correcto" in result
+    return {"correct": correct, "better": f.get("BETTER", ""),
+            "feedback": f.get("FEEDBACK", raw)}
+
+
+# ----------------------------------------------------------------------------
+# 4d) ESCRITURA (reescribir / traducir / completar / redacción)
+# ----------------------------------------------------------------------------
+def _writing_variety(theme, avoid):
+    s = f"Center it on the topic of {theme} to keep it varied. "
+    if avoid:
+        s += "Do NOT reuse any of these recent ones: " + " / ".join(list(avoid)[:12]) + ". "
+    return s
+
+
+def writing_exercise(level, kind, avoid=()):
+    """Genera un ejercicio de escritura: rewrite / translate / complete / paragraph."""
+    theme = _theme("")
+    var = _writing_variety(theme, avoid)
+    if kind == "translate":
+        system = ("Create a Spanish-to-English translation writing exercise. Write ONE natural "
+                  f"SPANISH sentence for a {level} learner to translate into English. "
+                  + _cefr_guide(level) + " " + var +
+                  "Reply with EXACTLY one line:\nSENTENCE: <the Spanish sentence>")
+    elif kind == "complete":
+        system = ("Create a sentence-completion writing exercise. Write the BEGINNING of an English "
+                  "sentence that the learner must finish (conditionals, linkers, time clauses, etc.). "
+                  f"Target CEFR {level}. " + var +
+                  "Reply with EXACTLY one line:\nSENTENCE: <the sentence beginning, ending where the "
+                  "learner continues, e.g. 'If I had more time, '>")
+    elif kind == "paragraph":
+        system = ("Create a short-writing prompt. Give ONE clear topic or question for a "
+                  f"{level} learner to write 2-3 English sentences about. " + var +
+                  "Reply with EXACTLY one line:\nTOPIC: <the topic or question in English>")
+    else:  # rewrite
+        kind = "rewrite"
+        system = ("Create an English sentence-transformation exercise. Write ONE correct English "
+                  "sentence and an instruction to rewrite it keeping the SAME meaning (use a given "
+                  "linker like despite/although/however, change to passive voice, use 'used to', make "
+                  "it more formal, or a key-word transformation). " + _cefr_guide(level) + " " + var +
+                  "Reply with EXACTLY two lines:\n"
+                  "SENTENCE: <the original English sentence>\n"
+                  "INSTRUCTION: <short instruction in SPANISH on how to rewrite it; put any English "
+                  "keyword in quotes>")
+    raw = _chat([{"role": "system", "content": system},
+                 {"role": "user", "content": f"Generate the exercise about {theme}."}],
+                temperature=0.9, num_predict=160)
+    f = _parse_fields(raw)
+    prompt = (f.get("SENTENCE") or f.get("TOPIC") or f.get("PROMPT") or "").strip().strip('"')
+    return {"kind": kind, "prompt": prompt, "instruction": f.get("INSTRUCTION", "").strip()}
+
+
+def writing_check(kind, prompt, instruction, answer, level=""):
+    """Evalúa lo que escribió el alumno. Devuelve {correct, score, better, feedback}."""
+    fmt = ("Reply using EXACTLY this format, no extra text:\n"
+           "RESULT: correct OR incorrect\n"
+           "SCORE: <integer 0-100>\n"
+           "BETTER: <a correct, natural model version>\n"
+           "FEEDBACK: <short explanation in SPANISH>")
+    if kind == "translate":
+        system = ("You check a Spanish-to-English translation. Judge whether the ENGLISH is a correct "
+                  "and natural translation of the SPANISH. " + fmt)
+        user = f"SPANISH: {prompt}\nLEARNER (English): {answer}"
+    elif kind == "complete":
+        system = ("You check a sentence the learner completed. Judge whether the FULL sentence is "
+                  "grammatical, natural and meaningful (it must start with the given BEGINNING). " + fmt)
+        user = f"BEGINNING: {prompt}\nLEARNER (full sentence): {answer}"
+    elif kind == "paragraph":
+        system = (f"You evaluate a short piece of writing (2-3 sentences) on the TOPIC for CEFR {level}. "
+                  "Judge grammar, vocabulary and whether it answers the topic. " + fmt +
+                  " FEEDBACK should include the main correction(s) and one tip.")
+        user = f"TOPIC: {prompt}\nLEARNER: {answer}"
+    else:  # rewrite
+        system = ("You check a sentence-transformation. The learner rewrote the ORIGINAL following the "
+                  "INSTRUCTION. It must keep the SAME meaning, follow the instruction and be correct. " + fmt)
+        user = f"ORIGINAL: {prompt}\nINSTRUCTION: {instruction}\nLEARNER: {answer}"
+    raw = _chat([{"role": "system", "content": system}, {"role": "user", "content": user}],
+                temperature=0.3, num_predict=260)
+    f = _parse_fields(raw)
+    result = f.get("RESULT", "").lower()
+    correct = result.startswith("correct") or "correcto" in result
+    score = None
+    m = re.search(r"\d{1,3}", f.get("SCORE", ""))
+    if m:
+        score = max(0, min(100, int(m.group())))
+    return {"correct": correct, "score": score, "better": f.get("BETTER", ""),
+            "feedback": f.get("FEEDBACK", raw)}
 
 
 # ----------------------------------------------------------------------------

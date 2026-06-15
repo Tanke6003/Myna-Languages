@@ -7,8 +7,8 @@ from fastapi import APIRouter, Body, File, Form, UploadFile
 from services import stt, llm
 from services import pronunciation as pron
 from backend import db
-from backend.schemas import LevelTopic, LevelReq, VocabReq, TextCheckReq
-from backend.routers._shared import save_temp
+from backend.schemas import LevelTopic, LevelReq, VocabReq, TextCheckReq, WritingNewReq, WritingCheckReq
+from backend.routers._shared import save_temp, fresh
 
 router = APIRouter(tags=["exercises"])
 
@@ -16,7 +16,8 @@ router = APIRouter(tags=["exercises"])
 # --- Lectura / pronunciación ---
 @router.post("/reading/sentence")
 def reading_sentence(req: LevelTopic):
-    sentence = llm.reading_sentence(req.level, req.topic)
+    # 'reading' lo comparten Pronunciación, Shadowing y Dictado: una frase ya vista no se repite.
+    sentence = fresh("reading", lambda s: s, lambda: llm.reading_sentence(req.level, req.topic))
     return {"sentence": sentence, "ipa": pron.transcribe_ipa(sentence)}
 
 
@@ -38,7 +39,7 @@ def reading_evaluate(level: str = Form(...), sentence: str = Form(...), audio: U
 # --- Corregir texto ---
 @router.post("/text/new")
 def text_new(req: LevelReq):
-    return {"sentence": llm.text_with_errors(req.level)}
+    return {"sentence": fresh("text", lambda s: s, lambda: llm.text_with_errors(req.level))}
 
 
 @router.post("/text/check")
@@ -46,16 +47,44 @@ def text_check(req: TextCheckReq):
     return llm.check_correction(req.original, req.correction)
 
 
+# --- Escritura (reescribir / traducir / completar / redacción) ---
+@router.post("/writing/new")
+def writing_new(req: WritingNewReq):
+    avoid = db.seen_recent(f"writing_{req.kind}", 20)
+    return fresh(f"writing_{req.kind}", lambda e: e.get("prompt", ""),
+                 lambda: llm.writing_exercise(req.level, req.kind, avoid=avoid), attempts=6)
+
+
+@router.post("/writing/check")
+def writing_check(req: WritingCheckReq):
+    return llm.writing_check(req.kind, req.prompt, req.instruction, req.answer, req.level)
+
+
 # --- Vocabulario ---
 @router.post("/vocab/new")
 def vocab_new(req: VocabReq):
-    return llm.vocab_exercise(req.level, req.kind)
+    kind = f"vocab_{req.kind}"
+    avoid = db.seen_recent(kind, 20)  # últimas palabras/frases objetivo, para que el modelo varíe
+    return fresh(kind, lambda e: e.get("prompt", ""),
+                 lambda: llm.vocab_exercise(req.level, req.kind, avoid=avoid), attempts=6)
 
 
 # --- Comprensión auditiva ---
 @router.post("/listening/new")
 def listening_new(req: LevelReq):
-    return llm.listening_exercise(req.level)
+    return fresh("listening", lambda e: e.get("passage", ""),
+                 lambda: llm.listening_exercise(req.level))
+
+
+# --- Sonidos parecidos (pares mínimos) ---
+@router.post("/minimal/new")
+def minimal_new(req: LevelReq):
+    avoid = db.seen_recent("minimal", 20)
+    ex = fresh("minimal", lambda e: e.get("answer", ""),
+               lambda: llm.minimal_pairs_exercise(req.level, avoid=avoid), attempts=6)
+    # IPA por opción (CMUdict local) para mostrar el contraste tras responder.
+    ex["ipa"] = {o: (pron.phonemes(o) or {}).get("ipa", "") for o in ex.get("options", [])}
+    return ex
 
 
 # --- Repaso mixto (con tus palabras más falladas) ---

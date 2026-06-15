@@ -5,12 +5,14 @@ la elección sobrevive a reinicios y es coherente con el instalador.
 """
 import os
 
-from config import OLLAMA_MODEL, BASE_DIR
+from config import OLLAMA_MODEL, BASE_DIR, TTS_VOICE
 
 _MODEL_FILE = os.path.join(BASE_DIR, "selected_model.txt")
 _DEVICE_FILE = os.path.join(BASE_DIR, "selected_device.txt")
+_VOICE_FILE = os.path.join(BASE_DIR, "selected_voice.txt")
 _current = None
 _device = None  # "gpu" (Ollama usa GPU si puede) o "cpu" (fuerza CPU)
+_voice = None   # voz TTS inglesa que habla al usuario (configurable en Ajustes)
 
 
 def _load():
@@ -61,3 +63,26 @@ def set_device(d):
     except Exception as e:
         print(f"[runtime] No pude guardar el dispositivo: {e}")
     return _device
+
+
+def get_voice():
+    """Voz TTS inglesa activa (la que le habla al usuario). Por defecto, la de config."""
+    global _voice
+    if _voice is None:
+        try:
+            with open(_VOICE_FILE, "r", encoding="utf-8-sig") as f:
+                _voice = f.read().strip() or TTS_VOICE
+        except Exception:
+            _voice = TTS_VOICE
+    return _voice or TTS_VOICE
+
+
+def set_voice(name):
+    global _voice
+    _voice = (name or "").strip() or TTS_VOICE
+    try:
+        with open(_VOICE_FILE, "w", encoding="utf-8") as f:
+            f.write(_voice)
+    except Exception as e:
+        print(f"[runtime] No pude guardar la voz: {e}")
+    return _voice

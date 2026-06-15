@@ -93,6 +93,15 @@ $chrome = @(
 if ($chrome) {
   # Perfil propio para la ventana de Myna: asi distinguimos SUS procesos de tu navegador normal.
   $profileDir = Join-Path $env:LOCALAPPDATA 'Myna\browser'
+
+  # --- Icono de la barra de tareas (modo --app) ---
+  # En modo --app, Chromium GENERA y CACHEA el icono de la ventana/taskbar dentro del perfil
+  # (Default\Web Applications). Si alguna vez quedo cacheado el icono del navegador (Edge), se
+  # queda pegado aunque la pagina ya sirva el de Myna. Borramos SOLO esa cache de iconos para
+  # que se regenere desde el favicon actual en cada arranque. NO toca cookies ni localStorage
+  # (onboarding, tema, etc. viven en Default\Local Storage y se conservan).
+  Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $profileDir 'Default\Web Applications')
+
   Start-Process $chrome -ArgumentList "--app=$url", "--user-data-dir=$profileDir"
 
   # Al cerrar la ventana, detener el backend. No seguimos un PID: Chrome/Edge reparten la ventana

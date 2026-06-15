@@ -1,8 +1,12 @@
 """Cerebro del tutor: conversación, correcciones y ejercicios con Ollama (local).
 
-Usamos un formato de texto por líneas (CLAVE: valor) en lugar de JSON: es más
-robusto (el modelo no necesita escapar comillas) y más rápido de generar.
+Los EJERCICIOS y CORRECCIONES piden la salida con un esquema JSON (`format=schema`):
+Ollama restringe la decodificación, así que la respuesta es siempre JSON válido con los
+campos esperados — sin parsear texto a mano (adiós a campos vacíos o etiquetas perdidas).
+La CONVERSACIÓN sigue en formato de líneas (CLAVE: valor) porque va en streaming y hay
+que extraer el REPLY token a token, cosa que no se puede con un JSON a medio generar.
 """
+import json
 import random
 import re
 
@@ -48,6 +52,75 @@ def _chat(messages, temperature=0.7, num_predict=None):
         # Cliente de ollama antiguo sin el parámetro `think`: reintenta sin él.
         resp = _client.chat(**kwargs)
     return _strip_think(resp["message"]["content"])
+
+
+def _chat_json(messages, schema, temperature=0.7, num_predict=None):
+    """Pide una respuesta que CUMPLE el esquema JSON dado. Con `format=schema`, Ollama
+    restringe la decodificación: la salida es siempre JSON válido con esos campos, así que
+    no hay que parsear texto a mano. Devuelve el dict ya parseado ({} si algo va mal)."""
+    options = {"temperature": temperature, "num_predict": num_predict or OLLAMA_NUM_PREDICT}
+    _device_options(options)
+    kwargs = {"model": runtime.get_model(), "messages": messages, "format": schema,
+              "options": options, "keep_alive": OLLAMA_KEEP_ALIVE}
+    try:
+        resp = _client.chat(think=False, **kwargs)
+    except TypeError:
+        resp = _client.chat(**kwargs)
+    raw = _strip_think(resp["message"]["content"])
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def _generate_valid(generate, is_valid, attempts=3):
+    """Llama a generate() hasta que is_valid(result) sea True (o se agoten los intentos).
+    Devuelve el último resultado aunque no valide (degradación elegante). El esquema JSON ya
+    garantiza la FORMA; esto cubre reglas SEMÁNTICAS entre campos (p. ej. la respuesta debe
+    estar entre las opciones, o el hueco ___ debe existir)."""
+    result = None
+    for _ in range(attempts):
+        result = generate()
+        if result and is_valid(result):
+            return result
+    return result
+
+
+# --- Esquemas y utilidades para opción múltiple -----------------------------
+_STR = {"type": "string"}
+
+
+def _schema(props):
+    """Objeto JSON con todos los campos obligatorios (para forzar que el modelo los rellene)."""
+    return {"type": "object", "properties": props, "required": list(props.keys())}
+
+
+def _opts_schema(n=4):
+    return {"type": "array", "items": _STR, "minItems": n, "maxItems": n}
+
+
+def _mc_options(options, answer, n=4):
+    """Normaliza opciones (texto, sin vacíos ni duplicados) y deja EXACTAMENTE n garantizando
+    que la respuesta correcta esté entre ellas. El esquema fuerza n ítems, pero no puede
+    garantizar que `answer` sea uno de ellos (es una regla entre campos)."""
+    answer = str(answer or "").strip().strip('"').strip()
+    opts = []
+    for o in options or []:
+        o = str(o).strip().strip('"').strip()
+        if o and o.lower() not in [x.lower() for x in opts]:
+            opts.append(o)
+    if answer and answer.lower() not in [o.lower() for o in opts]:
+        opts.append(answer)
+    if len(opts) > n:
+        keep = [answer] if answer else []
+        for o in opts:
+            if len(keep) >= n:
+                break
+            if o.lower() not in [k.lower() for k in keep]:
+                keep.append(o)
+        opts = keep
+    return opts, answer
 
 
 def _parse_fields(raw, repeatable=()):
@@ -312,53 +385,52 @@ def text_with_errors(level):
     return _chat(messages, temperature=1.0, num_predict=80).strip().strip('"')
 
 
+_CHECK_SCHEMA = _schema({"correct": {"type": "boolean"}, "fixed": _STR, "feedback": _STR})
+
+
 def check_correction(original_with_errors, user_correction):
     """Evalúa la corrección que escribió el alumno."""
-    messages = [
-        {"role": "system", "content": "You check a learner's correction of an English sentence. "
-                                       "Reply using EXACTLY this format, no quotes, no extra text:\n"
-                                       "RESULT: correct OR incorrect\n"
-                                       "FIXED: <the fully correct sentence>\n"
-                                       "FEEDBACK: <explanation in SPANISH>"},
-        {"role": "user", "content": f"Original (with mistakes): {original_with_errors}\n"
-                                     f"Learner's correction: {user_correction}"},
-    ]
-    raw = _chat(messages, temperature=0.3, num_predict=200)
-    f = _parse_fields(raw)
-    result = f.get("RESULT", "").lower()
+    system = ("You check a learner's correction of an English sentence. Decide whether their correction is "
+              "fully correct. Return JSON: correct=true/false; fixed=the fully correct English sentence; "
+              "feedback=a short explanation in SPANISH.")
+    data = _chat_json([{"role": "system", "content": system},
+                       {"role": "user", "content": f"Original (with mistakes): {original_with_errors}\n"
+                                                    f"Learner's correction: {user_correction}"}],
+                      _CHECK_SCHEMA, temperature=0.2, num_predict=240)
     return {
-        "correct": result.startswith("correct") or "correcto" in result,
-        "fixed": f.get("FIXED", ""),
-        "feedback": f.get("FEEDBACK", raw),
+        "correct": bool(data.get("correct")),
+        "fixed": (data.get("fixed") or "").strip(),
+        "feedback": (data.get("feedback") or "").strip(),
     }
 
 
 # ----------------------------------------------------------------------------
 # 4) EJERCICIOS DE VOCABULARIO / GRAMÁTICA (opción múltiple)
 # ----------------------------------------------------------------------------
-def _multiple_choice(system, user, temperature=0.8):
-    raw = _chat([{"role": "system", "content": system}, {"role": "user", "content": user}],
-                temperature=temperature, num_predict=250)
-    f = _parse_fields(raw)
-    options = [o.strip() for o in f.get("OPTIONS", "").split("|") if o.strip()]
-    answer = f.get("ANSWER", "").strip()
-    if answer and answer not in options:
-        options.append(answer)
-    if len(options) > 4:  # salvaguarda: como máximo 4, garantizando la respuesta
-        keep = [o for o in options if o == answer][:1]
-        for o in options:
-            if len(keep) >= 4:
-                break
-            if o not in keep:
-                keep.append(o)
-        options = keep
-    return {
-        "prompt": f.get("PROMPT", ""),
-        "question": f.get("QUESTION", ""),
-        "options": options,
-        "answer": answer,
-        "explain": f.get("EXPLAIN", ""),
-    }
+_MC_SCHEMA = _schema({"prompt": _STR, "question": _STR, "options": _opts_schema(4),
+                      "answer": _STR, "explain": _STR})
+
+
+def _multiple_choice(system, user, temperature=0.8, num_predict=320, valid=None):
+    """Genera un ejercicio de opción múltiple con esquema JSON. `valid` añade una regla
+    semántica extra (p. ej. que el enunciado tenga un hueco ___)."""
+    def gen():
+        data = _chat_json([{"role": "system", "content": system}, {"role": "user", "content": user}],
+                          _MC_SCHEMA, temperature=temperature, num_predict=num_predict)
+        options, answer = _mc_options(data.get("options"), data.get("answer", ""))
+        return {
+            "prompt": (data.get("prompt") or "").strip(),
+            "question": (data.get("question") or "").strip(),
+            "options": options,
+            "answer": answer,
+            "explain": (data.get("explain") or "").strip(),
+        }
+
+    def ok(e):
+        base = bool(e["answer"]) and e["answer"] in e["options"] and len(e["options"]) == 4
+        return base and (valid(e) if valid else True)
+
+    return _generate_valid(gen, ok)
 
 
 # Especificaciones de cada tipo de ejercicio de vocabulario (opción múltiple, en inglés)
@@ -414,52 +486,40 @@ def vocab_exercise(level, kind, avoid=()):
         variety += ("Do NOT use any of these recent target words — pick a clearly different one: "
                     + ", ".join(list(avoid)[:20]) + ". ")
     system = (
-        f"{s['intro']} {_cefr_guide(level)} {variety}Make the distractors non-obvious and plausible. "
-        "Reply using EXACTLY this format, no quotes, no extra text:\n"
-        f"PROMPT: {s['prompt']}\n"
-        f"QUESTION: {s['question']}\n"
-        "OPTIONS: <opt1> | <opt2> | <opt3> | <opt4>\n"
-        "ANSWER: <the correct option, exactly as in OPTIONS>\n"
-        "EXPLAIN: <short explanation in Spanish>\n"
-        "All OPTIONS are written in English. OPTIONS must contain EXACTLY 4 items separated by "
-        "' | '. ANSWER must be one of those 4 and must be the truly correct one, consistent with "
-        "EXPLAIN. " + s["extra"]
+        f"{s['intro']}. {_cefr_guide(level)} {variety}Make the distractors non-obvious and plausible. "
+        f"Return JSON: prompt = {s['prompt']}; question = \"{s['question']}\"; "
+        "options = an array of EXACTLY 4 options, all written in English; "
+        "answer = the truly correct option, copied EXACTLY as it appears in options and consistent with "
+        "explain; explain = a short explanation in Spanish. " + s["extra"]
     )
     return _multiple_choice(system, f"Generate the exercise about {theme}.")
+
+
+_MEANING_SCHEMA = _schema({"options": _opts_schema(4), "answer": _STR, "explain": _STR})
 
 
 def meaning_exercise(word):
     """Opción múltiple: ¿qué significa (en español) la palabra/frase inglesa dada?"""
     system = (
         "Create a 'what does this English word mean in Spanish?' multiple-choice question. "
-        "Reply EXACTLY like this, nothing else:\n"
-        "OPTIONS: <correct Spanish meaning> | <wrong> | <wrong> | <wrong>\n"
-        "ANSWER: <the correct one, exactly as in OPTIONS>\n"
-        "EXPLAIN: <short Spanish explanation>\n"
-        "OPTIONS must have EXACTLY 4 short Spanish meanings (1-3 words) separated by ' | '; "
-        "only one is correct.\n\n"
-        "Example for 'reliable':\n"
-        "OPTIONS: fiable | ruidoso | barato | lejano\n"
-        "ANSWER: fiable\n"
-        "EXPLAIN: 'reliable' significa fiable o de confianza."
+        "Return JSON: options = EXACTLY 4 short Spanish meanings (1-3 words each), only one correct; "
+        "answer = the correct one, copied exactly from options; explain = short Spanish explanation. "
+        "Example for 'reliable': options ['fiable','ruidoso','barato','lejano'], answer 'fiable', "
+        "explain \"'reliable' significa fiable o de confianza\"."
     )
-    raw = _chat([{"role": "system", "content": system}, {"role": "user", "content": word}],
-                temperature=0.6, num_predict=200)
-    f = _parse_fields(raw)
-    options = [o.strip() for o in f.get("OPTIONS", "").split("|") if o.strip()]
-    answer = f.get("ANSWER", "").strip()
-    if answer and answer not in options:
-        options.append(answer)
-    if len(options) > 4:
-        keep = [answer] if answer else []
-        for o in options:
-            if len(keep) >= 4:
-                break
-            if o not in keep:
-                keep.append(o)
-        options = keep
-    random.shuffle(options)
-    return {"options": options, "answer": answer, "explain": f.get("EXPLAIN", "")}
+
+    def gen():
+        data = _chat_json([{"role": "system", "content": system}, {"role": "user", "content": word}],
+                          _MEANING_SCHEMA, temperature=0.6, num_predict=220)
+        options, answer = _mc_options(data.get("options"), data.get("answer", ""))
+        return {"options": options, "answer": answer, "explain": (data.get("explain") or "").strip()}
+
+    ex = _generate_valid(gen, lambda e: bool(e["answer"]) and e["answer"] in e["options"] and len(e["options"]) == 4)
+    random.shuffle(ex["options"])
+    return ex
+
+
+_MINIMAL_SCHEMA = _schema({"word": _STR, "options": _opts_schema(4), "explain": _STR})
 
 
 def minimal_pairs_exercise(level, avoid=()):
@@ -480,36 +540,30 @@ def minimal_pairs_exercise(level, avoid=()):
         "are easily confused with it (differ by a single vowel or consonant sound — e.g. "
         "lived/left/leave/leaf, ship/sheep/cheap/chip, bad/bed/bat/bet). "
         f"{level_hint} for CEFR {level}. {extra}"
-        "Reply using EXACTLY this format, no quotes, no extra text:\n"
-        "WORD: <the target word that will be played as audio>\n"
-        "OPTIONS: <opt1> | <opt2> | <opt3> | <opt4>\n"
-        "EXPLAIN: <short explanation in SPANISH of the sound contrast and how to tell them apart>\n"
-        "OPTIONS must contain EXACTLY 4 real, distinct English words INCLUDING the target word, "
-        "separated by ' | '. Every option must be genuinely confusable by sound with the target."
+        "Return JSON: word = the single target word that will be played as audio; "
+        "options = EXACTLY 4 real, distinct English words INCLUDING the target word, every one genuinely "
+        "confusable by sound with the target; explain = short SPANISH explanation of the sound contrast "
+        "and how to tell them apart."
     )
-    raw = _chat([{"role": "system", "content": system},
-                 {"role": "user", "content": f"Generate the exercise about {theme}."}],
-                temperature=0.9, num_predict=160)
-    f = _parse_fields(raw)
-    word = f.get("WORD", "").strip().strip('"')
-    word = word.split()[0] if word else ""
-    options = [o.strip().strip('"') for o in f.get("OPTIONS", "").split("|")]
-    options = [o for o in options if o]
-    lower = [o.lower() for o in options]
-    if word and word.lower() not in lower:  # garantiza que la palabra objetivo esté entre opciones
-        options.insert(0, word)
-    if len(options) > 4:  # recorta a 4 conservando la palabra objetivo
-        keep = [word] if word else []
-        for o in options:
-            if len(keep) >= 4:
-                break
-            if o.lower() not in [k.lower() for k in keep]:
-                keep.append(o)
-        options = keep
-    if not word and options:
-        word = options[0]
-    random.shuffle(options)
-    return {"word": word, "options": options, "answer": word, "explain": f.get("EXPLAIN", "")}
+
+    def gen():
+        data = _chat_json([{"role": "system", "content": system},
+                           {"role": "user", "content": f"Generate the exercise about {theme}."}],
+                          _MINIMAL_SCHEMA, temperature=0.9, num_predict=220)
+        word = (data.get("word") or "").strip().strip('"')
+        word = word.split()[0] if word else ""
+        options, _ = _mc_options(data.get("options"), word)  # asegura el objetivo entre opciones
+        if not word and options:
+            word = options[0]
+        return {"word": word, "options": options, "answer": word, "explain": (data.get("explain") or "").strip()}
+
+    ex = _generate_valid(gen, lambda e: bool(e["word"]) and len(e["options"]) == 4 and e["word"] in e["options"])
+    random.shuffle(ex["options"])
+    return ex
+
+
+_LISTENING_SCHEMA = _schema({"passage": _STR, "question": _STR, "options": _opts_schema(4),
+                             "answer": _STR, "explain": _STR})
 
 
 def listening_exercise(level):
@@ -517,34 +571,24 @@ def listening_exercise(level):
     system = (
         "Create a short English listening-comprehension exercise. "
         f"{_cefr_guide(level)} The passage and question must match that level. "
-        "Reply using EXACTLY this format, no quotes, no extra text:\n"
-        "PASSAGE: <2-3 natural English sentences to be read aloud>\n"
-        "QUESTION: <one comprehension question in English about the passage>\n"
-        "OPTIONS: <opt1> | <opt2> | <opt3> | <opt4>\n"
-        "ANSWER: <the correct option, exactly as in OPTIONS>\n"
-        "EXPLAIN: <short explanation in Spanish>\n"
-        "QUESTION, OPTIONS and ANSWER are ALL in English. OPTIONS must contain EXACTLY 4 items "
-        "separated by ' | '. ANSWER must be one of them."
+        "Return JSON: passage = 2-3 natural English sentences to be read aloud; "
+        "question = one comprehension question in English about the passage; "
+        "options = EXACTLY 4 options, ALL in English; "
+        "answer = the correct option copied exactly from options; "
+        "explain = a short explanation in Spanish."
     )
-    raw = _chat([{"role": "system", "content": system},
-                 {"role": "user", "content": "Generate the exercise."}],
-                temperature=0.8, num_predict=400)
-    f = _parse_fields(raw)
-    options = [o.strip(" |,\t") for o in f.get("OPTIONS", "").split("|")]
-    options = [o for o in options if o]
-    answer = f.get("ANSWER", "").strip(" |,\t")
-    if answer and answer not in options:
-        options.append(answer)
-    if len(options) > 4:
-        keep = [o for o in options if o == answer][:1]
-        for o in options:
-            if len(keep) >= 4:
-                break
-            if o not in keep:
-                keep.append(o)
-        options = keep
-    return {"passage": f.get("PASSAGE", ""), "question": f.get("QUESTION", ""),
-            "options": options, "answer": answer, "explain": f.get("EXPLAIN", "")}
+
+    def gen():
+        data = _chat_json([{"role": "system", "content": system},
+                           {"role": "user", "content": "Generate the exercise."}],
+                          _LISTENING_SCHEMA, temperature=0.8, num_predict=480)
+        options, answer = _mc_options(data.get("options"), data.get("answer", ""))
+        return {"passage": (data.get("passage") or "").strip(),
+                "question": (data.get("question") or "").strip(),
+                "options": options, "answer": answer, "explain": (data.get("explain") or "").strip()}
+
+    return _generate_valid(gen, lambda e: bool(e["passage"]) and bool(e["answer"])
+                           and e["answer"] in e["options"] and len(e["options"]) == 4)
 
 
 # ----------------------------------------------------------------------------
@@ -555,28 +599,32 @@ def _concept_tag(phrase, meaning):
     return f"'{phrase}'" + (f" (meaning: {meaning})" if meaning else "")
 
 
+_GAP_SCHEMA = _schema({"prompt": _STR, "answer": _STR, "explain": _STR})
+
+
 def concept_gap(phrase, meaning, level):
     """Frase NUEVA con un hueco (___) donde va la expresión; el alumno la escribe."""
     system = (
         f"Create a gap-fill exercise to practice the English expression {_concept_tag(phrase, meaning)}. "
         "Write ONE natural English sentence in a FRESH context that uses the expression, then replace "
         "ONLY the expression with ___ (a single blank). " + _cefr_guide(level) +
-        " Reply using EXACTLY this format, no quotes, no extra text:\n"
-        "PROMPT: <the sentence with one ___ where the expression goes>\n"
-        "ANSWER: <only the words that fill the blank: the expression, inflected/conjugated to fit>\n"
-        "EXPLAIN: <short explanation in SPANISH of its meaning and how it is used>\n"
-        "The blank ___ must stand exactly where the expression belongs and appear once. "
-        "ANSWER is ONLY the missing words, never the whole sentence."
+        " Return JSON: prompt = the sentence with one ___ where the expression goes (the blank appears "
+        "exactly once); answer = ONLY the words that fill the blank (the expression, inflected to fit), "
+        "never the whole sentence; explain = short SPANISH explanation of its meaning and use."
     )
-    raw = _chat([{"role": "system", "content": system},
-                 {"role": "user", "content": "Generate the exercise."}],
-                temperature=0.8, num_predict=220)
-    f = _parse_fields(raw)
-    prompt = f.get("PROMPT", "").strip()
-    answer = f.get("ANSWER", "").strip().strip('"') or phrase
-    if "___" not in prompt:  # red de seguridad: si el modelo no dejó el hueco, no es usable
-        prompt = f"___ — {prompt}".strip(" —") or f"Use the expression: ___"
-    return {"prompt": prompt, "answer": answer, "explain": f.get("EXPLAIN", "")}
+
+    def gen():
+        data = _chat_json([{"role": "system", "content": system},
+                           {"role": "user", "content": "Generate the exercise."}],
+                          _GAP_SCHEMA, temperature=0.8, num_predict=260)
+        return {"prompt": (data.get("prompt") or "").strip(),
+                "answer": (data.get("answer") or "").strip().strip('"') or phrase,
+                "explain": (data.get("explain") or "").strip()}
+
+    ex = _generate_valid(gen, lambda e: "___" in e["prompt"])
+    if "___" not in ex["prompt"]:  # red de seguridad final: si nunca dejó el hueco, lo forzamos
+        ex["prompt"] = f"___ — {ex['prompt']}".strip(" —") or "Use the expression: ___"
+    return ex
 
 
 def concept_choice(phrase, meaning, level):
@@ -584,42 +632,40 @@ def concept_choice(phrase, meaning, level):
     system = (
         f"Create a multiple-choice gap-fill to practice the English expression "
         f"{_concept_tag(phrase, meaning)}. Write ONE natural English sentence with a single blank ___ "
-        "where the expression fits, and 4 options where EXACTLY ONE is correct (the target expression, "
-        "correctly inflected) and the other 3 are plausible but wrong similar expressions or phrasal "
-        "verbs. " + _cefr_guide(level) +
-        " Reply using EXACTLY this format, no quotes, no extra text:\n"
-        "PROMPT: <the sentence with one ___>\n"
-        "QUESTION: Which option best fits the blank?\n"
-        "OPTIONS: <opt1> | <opt2> | <opt3> | <opt4>\n"
-        "ANSWER: <the correct option, exactly as in OPTIONS>\n"
-        "EXPLAIN: <short explanation in SPANISH>\n"
-        "OPTIONS must contain EXACTLY 4 items separated by ' | '. ANSWER must be one of them and must "
-        "be the target expression."
+        "where the expression fits. " + _cefr_guide(level) +
+        " Return JSON: prompt = the sentence with one ___; question = \"Which option best fits the blank?\"; "
+        "options = EXACTLY 4 options where exactly one is correct (the target expression, correctly "
+        "inflected) and the other 3 are plausible but wrong similar expressions or phrasal verbs; "
+        "answer = the correct option (the target expression) copied exactly from options; "
+        "explain = short SPANISH explanation."
     )
-    return _multiple_choice(system, "Generate the exercise.")
+    ex = _multiple_choice(system, "Generate the exercise.", valid=lambda e: "___" in e["prompt"])
+    if "___" not in ex["prompt"]:  # red de seguridad final
+        ex["prompt"] = f"___ — {ex['prompt']}".strip(" —") or "Use the expression: ___"
+    return ex
+
+
+_CONCEPT_CHECK_SCHEMA = _schema({"correct": {"type": "boolean"}, "better": _STR, "feedback": _STR})
 
 
 def concept_check(phrase, sentence):
     """Evalúa una frase escrita por el alumno que debe usar la expresión dada."""
+    # Confiamos en el juicio del modelo (tiene orden de marcar incorrecto si falta la expresión);
+    # no comparamos por substring porque la expresión suele ir conjugada (p. ej. 'come up with' →
+    # 'came up with') y daría falsos negativos.
     system = (
         f"You check whether a learner correctly used the English expression '{phrase}' in their own "
-        "sentence. Reply using EXACTLY this format, no quotes, no extra text:\n"
-        "RESULT: correct OR incorrect\n"
-        "BETTER: <a corrected or more natural version of their sentence (or the same if already good)>\n"
-        "FEEDBACK: <short explanation in SPANISH: did they use the expression well, and what to improve>\n"
-        "Mark it incorrect if the expression is missing, misused, or the sentence is ungrammatical."
+        "sentence. Mark it incorrect if the expression is missing, misused, or the sentence is "
+        "ungrammatical. Return JSON: correct=true/false; better=a corrected or more natural version of "
+        "their sentence IN ENGLISH (or the same if already good); feedback=short SPANISH explanation of "
+        "whether they used the expression well and what to improve."
     )
-    raw = _chat([{"role": "system", "content": system},
-                 {"role": "user", "content": f"Expression: {phrase}\nLearner's sentence: {sentence}"}],
-                temperature=0.3, num_predict=220)
-    f = _parse_fields(raw)
-    result = f.get("RESULT", "").lower()
-    # Confiamos en el juicio del modelo (ya tiene orden de marcar incorrecto si falta la
-    # expresión); no comparamos por substring porque la expresión suele ir conjugada
-    # (p. ej. 'come up with' → 'came up with') y daría falsos negativos.
-    correct = result.startswith("correct") or "correcto" in result
-    return {"correct": correct, "better": f.get("BETTER", ""),
-            "feedback": f.get("FEEDBACK", raw)}
+    data = _chat_json([{"role": "system", "content": system},
+                       {"role": "user", "content": f"Expression: {phrase}\nLearner's sentence: {sentence}"}],
+                      _CONCEPT_CHECK_SCHEMA, temperature=0.2, num_predict=260)
+    return {"correct": bool(data.get("correct")),
+            "better": (data.get("better") or "").strip(),
+            "feedback": (data.get("feedback") or "").strip()}
 
 
 # ----------------------------------------------------------------------------
@@ -632,93 +678,78 @@ def _writing_variety(theme, avoid):
     return s
 
 
+_WRITING_SCHEMA = _schema({"prompt": _STR, "instruction": _STR})
+
+
 def writing_exercise(level, kind, avoid=()):
     """Genera un ejercicio de escritura: rewrite / translate / complete / paragraph."""
     theme = _theme("")
     var = _writing_variety(theme, avoid)
     if kind == "translate":
-        system = ("Create a Spanish-to-English translation writing exercise. Write ONE natural "
-                  f"SPANISH sentence for a {level} learner to translate into English. "
-                  + _cefr_guide(level) + " " + var +
-                  "Reply with EXACTLY one line:\nSENTENCE: <the Spanish sentence>")
+        task = ("Create a Spanish-to-English translation exercise. " + _cefr_guide(level) + " " + var +
+                "prompt = ONE natural SPANISH sentence for the learner to translate into English. "
+                "instruction = an empty string.")
     elif kind == "complete":
-        system = ("Create a sentence-completion writing exercise. Write the BEGINNING of an English "
-                  "sentence that the learner must finish (conditionals, linkers, time clauses, etc.). "
-                  f"Target CEFR {level}. " + var +
-                  "Reply with EXACTLY one line:\nSENTENCE: <the sentence beginning, ending where the "
-                  "learner continues, e.g. 'If I had more time, '>")
+        task = ("Create a sentence-completion exercise. " + _cefr_guide(level) + " " + var +
+                "prompt = the BEGINNING of an English sentence the learner must finish (conditionals, "
+                "linkers, time clauses…), ending right where they continue, e.g. \"If I had more time, \". "
+                "instruction = an empty string.")
     elif kind == "paragraph":
-        system = ("Create a short-writing prompt. Give ONE clear topic or question for a "
-                  f"{level} learner to write 2-3 English sentences about. " + var +
-                  "Reply with EXACTLY one line:\nTOPIC: <the topic or question in English>")
+        task = ("Create a short-writing prompt. " + var +
+                f"prompt = ONE clear topic or question in English for a {level} learner to write 2-3 "
+                "sentences about. instruction = an empty string.")
     else:  # rewrite
         kind = "rewrite"
-        system = ("Create an English sentence-transformation exercise. Write ONE correct English "
-                  "sentence and an instruction to rewrite it keeping the SAME meaning (use a given "
-                  "linker like despite/although/however, change to passive voice, use 'used to', make "
-                  "it more formal, or a key-word transformation). " + _cefr_guide(level) + " " + var +
-                  "Reply with EXACTLY two lines:\n"
-                  "SENTENCE: <the original English sentence>\n"
-                  "INSTRUCTION: <short instruction in SPANISH on how to rewrite it; put any English "
-                  "keyword in quotes>")
-    raw = _chat([{"role": "system", "content": system},
-                 {"role": "user", "content": f"Generate the exercise about {theme}."}],
-                temperature=0.9, num_predict=160)
-    f = _parse_fields(raw)
-    prompt = (f.get("SENTENCE") or f.get("TOPIC") or f.get("PROMPT") or "").strip()
-    instruction = f.get("INSTRUCTION", "").strip()
-    if not prompt:
-        # El modelo a veces ignora el prefijo "SENTENCE:/TOPIC:" y devuelve el enunciado
-        # directo (a veces con un '>' que se cuela de la plantilla <...>). Usamos como
-        # enunciado la primera línea con contenido para no dejar el ejercicio vacío.
-        for line in (raw or "").splitlines():
-            cand = line.strip()
-            if cand.upper().startswith("INSTRUCTION"):
-                continue
-            cand = re.sub(r"^(SENTENCE|TOPIC|PROMPT)\s*:", "", cand, flags=re.I).strip()
-            cand = cand.strip("<>").strip().strip('"').strip()
-            if cand:
-                prompt = cand
-                break
-    prompt = prompt.strip('"').strip()
-    return {"kind": kind, "prompt": prompt, "instruction": instruction}
+        task = ("Create an English sentence-transformation exercise. " + _cefr_guide(level) + " " + var +
+                "prompt = ONE correct English sentence. instruction = a short instruction in SPANISH to "
+                "rewrite it keeping the SAME meaning (use a linker like despite/although/however, change to "
+                "passive voice, use 'used to', make it more formal, or a key-word transformation); put any "
+                "English keyword in quotes.")
+
+    def gen():
+        data = _chat_json([{"role": "system", "content": task},
+                           {"role": "user", "content": f"Generate the exercise about {theme}."}],
+                          _WRITING_SCHEMA, temperature=0.9, num_predict=200)
+        return {"prompt": (data.get("prompt") or "").strip().strip('"').strip(),
+                "instruction": (data.get("instruction") or "").strip()}
+
+    ex = _generate_valid(gen, lambda e: bool(e["prompt"]))
+    return {"kind": kind, "prompt": ex["prompt"], "instruction": ex["instruction"]}
+
+
+_WRITING_CHECK_SCHEMA = _schema({"correct": {"type": "boolean"}, "score": {"type": "integer"},
+                                 "better": _STR, "feedback": _STR})
 
 
 def writing_check(kind, prompt, instruction, answer, level=""):
     """Evalúa lo que escribió el alumno. Devuelve {correct, score, better, feedback}."""
-    fmt = ("Reply using EXACTLY this format, no extra text:\n"
-           "RESULT: correct OR incorrect\n"
-           "SCORE: <integer 0-100>\n"
-           "BETTER: <a correct, natural model version>\n"
-           "FEEDBACK: <short explanation in SPANISH>")
+    fmt = (" Return JSON: correct=true/false; score=integer 0-100; "
+           "better=the corrected, natural version IN ENGLISH (always include it, even if correct); "
+           "feedback=a short explanation in SPANISH.")
     if kind == "translate":
         system = ("You check a Spanish-to-English translation. Judge whether the ENGLISH is a correct "
-                  "and natural translation of the SPANISH. " + fmt)
+                  "and natural translation of the SPANISH." + fmt)
         user = f"SPANISH: {prompt}\nLEARNER (English): {answer}"
     elif kind == "complete":
         system = ("You check a sentence the learner completed. Judge whether the FULL sentence is "
-                  "grammatical, natural and meaningful (it must start with the given BEGINNING). " + fmt)
+                  "grammatical, natural and meaningful (it must start with the given BEGINNING)." + fmt)
         user = f"BEGINNING: {prompt}\nLEARNER (full sentence): {answer}"
     elif kind == "paragraph":
         system = (f"You evaluate a short piece of writing (2-3 sentences) on the TOPIC for CEFR {level}. "
-                  "Judge grammar, vocabulary and whether it answers the topic. " + fmt +
-                  " FEEDBACK should include the main correction(s) and one tip.")
+                  "Judge grammar, vocabulary and whether it answers the topic." + fmt +
+                  " feedback should include the main correction(s) and one tip.")
         user = f"TOPIC: {prompt}\nLEARNER: {answer}"
     else:  # rewrite
         system = ("You check a sentence-transformation. The learner rewrote the ORIGINAL following the "
-                  "INSTRUCTION. It must keep the SAME meaning, follow the instruction and be correct. " + fmt)
+                  "INSTRUCTION. It must keep the SAME meaning, follow the instruction and be correct." + fmt)
         user = f"ORIGINAL: {prompt}\nINSTRUCTION: {instruction}\nLEARNER: {answer}"
-    raw = _chat([{"role": "system", "content": system}, {"role": "user", "content": user}],
-                temperature=0.3, num_predict=260)
-    f = _parse_fields(raw)
-    result = f.get("RESULT", "").lower()
-    correct = result.startswith("correct") or "correcto" in result
-    score = None
-    m = re.search(r"\d{1,3}", f.get("SCORE", ""))
-    if m:
-        score = max(0, min(100, int(m.group())))
-    return {"correct": correct, "score": score, "better": f.get("BETTER", ""),
-            "feedback": f.get("FEEDBACK", raw)}
+    data = _chat_json([{"role": "system", "content": system}, {"role": "user", "content": user}],
+                      _WRITING_CHECK_SCHEMA, temperature=0.2, num_predict=340)
+    score = data.get("score")
+    score = max(0, min(100, int(score))) if isinstance(score, (int, float)) else None
+    return {"correct": bool(data.get("correct")), "score": score,
+            "better": (data.get("better") or "").strip(),
+            "feedback": (data.get("feedback") or "").strip()}
 
 
 # ----------------------------------------------------------------------------
@@ -767,32 +798,32 @@ def word_meaning(word):
     return _chat(msgs, temperature=0.2, num_predict=40).strip().strip('"')
 
 
+_DETAILS_SCHEMA = _schema({
+    "synonyms": {"type": "array", "items": _STR},
+    "examples": {"type": "array", "items": {
+        "type": "object", "properties": {"en": _STR, "es": _STR}, "required": ["en", "es"]}},
+})
+
+
 def translation_details(english_text):
     """Para una palabra/frase EN inglés: sinónimos y ejemplos sencillos (con su español)."""
     system = (
         "Give synonyms and example sentences for the English word or phrase. "
-        "Reply EXACTLY like this, one item per line, nothing else:\n"
-        "SYNONYMS: word1, word2, word3\n"
-        "EX: <one simple English sentence> | <its Spanish translation>\n"
-        "EX: <another simple English sentence> | <its Spanish translation>\n\n"
-        "Example for the word 'happy':\n"
-        "SYNONYMS: glad, cheerful, content\n"
-        "EX: She felt happy at the party. | Se sintió feliz en la fiesta.\n"
-        "EX: They are happy together. | Están felices juntos."
+        "Return JSON: synonyms = a few English synonyms; examples = 2 objects, each with "
+        "en = one simple English sentence using it and es = its Spanish translation. "
+        "Example for 'happy': synonyms ['glad','cheerful','content'], examples "
+        "[{\"en\":\"She felt happy at the party.\",\"es\":\"Se sintió feliz en la fiesta.\"}]."
     )
-    raw = _chat([{"role": "system", "content": system},
-                 {"role": "user", "content": english_text}], temperature=0.4, num_predict=220)
-    f = _parse_fields(raw, repeatable=("EX",))
-    synonyms = [s.strip() for s in f.get("SYNONYMS", "").replace("|", ",").split(",")]
-    synonyms = list(dict.fromkeys(s for s in synonyms if s and s != "-"))  # sin duplicados
+    data = _chat_json([{"role": "system", "content": system},
+                       {"role": "user", "content": english_text}], _DETAILS_SCHEMA,
+                      temperature=0.4, num_predict=280)
+    synonyms = list(dict.fromkeys(  # sin duplicados, sin vacíos
+        s.strip() for s in (data.get("synonyms") or []) if isinstance(s, str) and s.strip() and s.strip() != "-"))
     examples = []
-    for e in f.get("EX", []):
-        en, es = e, ""
-        for sep in (" | ", "::", " = ", "|"):
-            if sep in e:
-                en, es = e.split(sep, 1)
-                break
-        en, es = en.strip(), es.strip()
+    for e in (data.get("examples") or []):
+        if not isinstance(e, dict):
+            continue
+        en, es = (e.get("en") or "").strip(), (e.get("es") or "").strip()
         if en:
             examples.append({"en": en, "es": es})
     return {"word": english_text, "synonyms": synonyms, "examples": examples}

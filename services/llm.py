@@ -665,8 +665,23 @@ def writing_exercise(level, kind, avoid=()):
                  {"role": "user", "content": f"Generate the exercise about {theme}."}],
                 temperature=0.9, num_predict=160)
     f = _parse_fields(raw)
-    prompt = (f.get("SENTENCE") or f.get("TOPIC") or f.get("PROMPT") or "").strip().strip('"')
-    return {"kind": kind, "prompt": prompt, "instruction": f.get("INSTRUCTION", "").strip()}
+    prompt = (f.get("SENTENCE") or f.get("TOPIC") or f.get("PROMPT") or "").strip()
+    instruction = f.get("INSTRUCTION", "").strip()
+    if not prompt:
+        # El modelo a veces ignora el prefijo "SENTENCE:/TOPIC:" y devuelve el enunciado
+        # directo (a veces con un '>' que se cuela de la plantilla <...>). Usamos como
+        # enunciado la primera línea con contenido para no dejar el ejercicio vacío.
+        for line in (raw or "").splitlines():
+            cand = line.strip()
+            if cand.upper().startswith("INSTRUCTION"):
+                continue
+            cand = re.sub(r"^(SENTENCE|TOPIC|PROMPT)\s*:", "", cand, flags=re.I).strip()
+            cand = cand.strip("<>").strip().strip('"').strip()
+            if cand:
+                prompt = cand
+                break
+    prompt = prompt.strip('"').strip()
+    return {"kind": kind, "prompt": prompt, "instruction": instruction}
 
 
 def writing_check(kind, prompt, instruction, answer, level=""):

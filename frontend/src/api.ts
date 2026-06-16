@@ -54,10 +54,12 @@ export interface SystemInfo {
   cpu_threads: number
   cpu_name: string
   cpu_ghz: number
-  gpu: { nvidia: boolean; count: number; name: string }
+  gpu: { nvidia: boolean; amd: boolean; vendor: string; count: number; name: string }
   vram_gb: number
   budget_gb: number
   whisper_device: string
+  whisper_device_pref: string
+  whisper_gpu_available: boolean
   whisper_model: string
   whisper_sizes: string[]
   current_model: string
@@ -202,6 +204,8 @@ export const api = {
     postJSON('/api/settings/model', { model }),
   setWhisper: (model: string): Promise<{ whisper_model: string }> =>
     postJSON('/api/settings/whisper', { model }),
+  setWhisperDevice: (device: string): Promise<{ whisper_device_pref: string }> =>
+    postJSON('/api/settings/whisper-device', { device }),
   getReminder: (): Promise<Reminder> => fetch('/api/settings/reminder').then(handle),
   setReminder: (enabled: boolean, time: string): Promise<Reminder> =>
     postJSON('/api/settings/reminder', { enabled, time }),

@@ -22,6 +22,7 @@ export default function Settings() {
   const [model, setModel] = useState('')
   const [whisper, setWhisper] = useState('')
   const [device, setDevice] = useState('gpu')
+  const [whisperDevice, setWhisperDevice] = useState('gpu')
   const [voice, setVoice] = useState('')
   const [saving, setSaving] = useState(false)
   const [pulling, setPulling] = useState<string | null>(null)
@@ -33,7 +34,7 @@ export default function Settings() {
     try {
       const s = await api.system()
       setInfo(s); setModel(s.current_model); setWhisper(s.whisper_model); setDevice(s.llm_device)
-      setVoice(s.tts_voice)
+      setWhisperDevice(s.whisper_device_pref); setVoice(s.tts_voice)
     } catch (e: any) { toast(e.message, 'error') }
   }
   useEffect(() => { load() }, [])
@@ -65,6 +66,16 @@ export default function Settings() {
       setDevice(r.llm_device)
       setInfo((i) => (i ? { ...i, llm_device: r.llm_device } : i))
       toast(`${t('settings.applied')}: ${r.llm_device.toUpperCase()}`, 'success')
+    } catch (e: any) { toast(e.message, 'error') } finally { setSaving(false) }
+  }
+
+  async function applyWhisperDevice(chosen: string) {
+    setSaving(true)
+    try {
+      const r = await api.setWhisperDevice(chosen)
+      setWhisperDevice(r.whisper_device_pref)
+      setInfo((i) => (i ? { ...i, whisper_device_pref: r.whisper_device_pref } : i))
+      toast(`${t('settings.applied')}: ${r.whisper_device_pref.toUpperCase()}`, 'success')
     } catch (e: any) { toast(e.message, 'error') } finally { setSaving(false) }
   }
 
@@ -110,7 +121,8 @@ export default function Settings() {
     return <div className="mx-auto max-w-2xl"><Card><p className="text-sm text-muted">…</p></Card></div>
   }
 
-  const gpuValue = info.gpu.nvidia ? (info.gpu.name || `NVIDIA ×${info.gpu.count}`) : t('settings.none')
+  // Muestra el nombre real de cualquier GPU (NVIDIA/AMD/Intel), no solo NVIDIA.
+  const gpuValue = info.gpu.name || (info.gpu.nvidia ? `NVIDIA ×${info.gpu.count}` : t('settings.none'))
   const installed = info.available_models.length ? info.available_models : [info.current_model]
 
   return (
@@ -213,6 +225,19 @@ export default function Settings() {
         <div className="flex flex-wrap items-center gap-2">
           <Select value={whisper} onChange={setWhisper} options={info.whisper_sizes} className="min-w-44" />
           <Button onClick={() => applyWhisper(whisper)} loading={saving}><Check size={16} />{t('settings.apply')}</Button>
+        </div>
+        {/* Dispositivo de Whisper, independiente del LLM. Whisper solo acelera con NVIDIA/CUDA. */}
+        <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          <span className="text-sm font-bold">{t('settings.device')}</span>
+          {info.whisper_gpu_available ? (
+            <>
+              <Segmented options={['GPU', 'CPU']} value={whisperDevice.toUpperCase()}
+                onChange={(v) => applyWhisperDevice(v.toLowerCase())} />
+              <span className="text-xs text-muted">{t('settings.deviceHint')}</span>
+            </>
+          ) : (
+            <span className="text-xs text-muted">{t('settings.whisperCpuOnly')}</span>
+          )}
         </div>
       </Card>
 

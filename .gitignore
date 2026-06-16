@@ -14,6 +14,7 @@ tutor.log*
 selected_model.txt
 selected_whisper.txt
 selected_device.txt
+selected_whisper_device.txt
 selected_voice.txt
 reminder.json
 

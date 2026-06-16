@@ -21,6 +21,21 @@ $ghz = [math]::Round((($cpu | Measure-Object -Property MaxClockSpeed -Maximum).M
 Write-Host ("Hardware: {0} GB RAM | CPU: {1} nucleos @ {2} GHz | NVIDIA: {3} | AMD/Radeon: {4}" -f `
   $ramGB, $cores, $ghz, (@('No', 'Si')[[int]$hasNvidia]), (@('No', 'Si')[[int]$hasAmd]))
 
+# --- 1b) AMD RDNA2 (RX 6000 / Navi 2x = gfx103x): no esta en la lista oficial de ROCm de Ollama.
+#     Con HSA_OVERRIDE_GFX_VERSION=10.3.0 Ollama SI la usa. Lo dejamos PERSISTENTE (ambito User)
+#     para que el servidor de Ollama lo herede al arrancar (toma efecto al reabrir Ollama/reiniciar).
+#     Las RX 7000 (RDNA3) ya van nativas, no necesitan override. ---
+$amdOverride = $false
+if ($hasAmd) {
+  $amdName = ($gpus | Where-Object { $_.Name -match 'AMD|Radeon' } | Select-Object -First 1).Name
+  if ($amdName -match 'RX\s?6\d{2,3}') {
+    [Environment]::SetEnvironmentVariable('HSA_OVERRIDE_GFX_VERSION', '10.3.0', 'User')
+    $env:HSA_OVERRIDE_GFX_VERSION = '10.3.0'
+    $amdOverride = $true
+    Write-Host ("GPU AMD RDNA2 ({0}): HSA_OVERRIDE_GFX_VERSION=10.3.0 (para que Ollama la use)." -f $amdName) -ForegroundColor Yellow
+  }
+}
+
 # --- 2) Elegir modelo de Ollama ---
 # Con GPU manda esta; sin ella, el limite real lo ponen los nucleos+GHz del CPU, acotado por la RAM.
 if ($hasNvidia) {
@@ -92,3 +107,7 @@ $lnk.Save()
 
 Write-Host ""
 Write-Host "Listo. Abre 'Myna' en el escritorio (o ejecuta run.ps1)." -ForegroundColor Green
+if ($amdOverride) {
+  Write-Host "NOTA (AMD): si Ollama ya estaba abierto, cierralo y vuelve a abrirlo (o reinicia una vez)" -ForegroundColor Yellow
+  Write-Host "            para que use la GPU. Comprueba con: ollama ps  (debe decir 100% GPU)." -ForegroundColor Yellow
+}

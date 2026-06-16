@@ -2,7 +2,7 @@
 import os
 import threading
 
-from config import WHISPER_MODEL, WHISPER_DEVICE, WHISPER_COMPUTE, BASE_DIR
+from config import WHISPER_MODEL, WHISPER_COMPUTE, BASE_DIR
 
 _model = None
 _actual_device = None  # dispositivo real donde cargó el modelo (tras posible fallback)
@@ -40,17 +40,19 @@ def set_model_name(name):
 
 
 def _resolve_device():
-    """Decide GPU/CPU. 'auto' usa CUDA si hay GPU NVIDIA disponible, si no CPU."""
-    dev = WHISPER_DEVICE
-    if dev == "auto":
+    """Decide GPU/CPU según la preferencia del usuario (Ajustes).
+
+    'cpu' fuerza CPU. 'gpu' (por defecto) usa CUDA SOLO si hay una NVIDIA disponible;
+    ctranslate2 no acelera con AMD/Intel, así que en esos equipos 'gpu' cae a CPU."""
+    from services import runtime
+    if runtime.get_whisper_device() != "cpu":
         try:
             import ctranslate2
             if ctranslate2.get_cuda_device_count() > 0:
                 return "cuda", "float16"
         except Exception:
             pass
-        return "cpu", WHISPER_COMPUTE
-    return dev, ("float16" if dev == "cuda" else WHISPER_COMPUTE)
+    return "cpu", WHISPER_COMPUTE
 
 
 def _add_cuda_dll_dirs():
@@ -84,6 +86,17 @@ def _cuda_works(model):
 def active_device():
     """Dispositivo real en uso (tras el posible fallback), o el previsto si aún no cargó."""
     return _actual_device or _resolve_device()[0]
+
+
+def set_device(pref):
+    """Cambia el dispositivo de Whisper ('gpu'/'cpu') y fuerza recarga en la próxima
+    transcripción (el modelo cargado vive en memoria, hay que soltarlo para cambiar)."""
+    global _model, _actual_device
+    from services import runtime
+    val = runtime.set_whisper_device(pref)
+    _model = None
+    _actual_device = None
+    return val
 
 
 def get_model():

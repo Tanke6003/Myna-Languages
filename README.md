@@ -180,3 +180,39 @@ lectura. Latencia **en caliente** (modelo ya cargado). Probado en **GPU** y forz
 
 **Veredicto de modelo:** con GPU → `qwen2.5:7b`. En CPU → `qwen2.5:3b` (o `1.5b`/`0.5b` si el equipo va muy justo). Como alternativa de DeepSeek (chat, no razonamiento) está `deepseek-llm:7b`.
 
+### 🔴 GPU AMD / Radeon (p. ej. RX 6600)
+
+> ⚠️ **No probado.** No tengo una GPU AMD a mano para verificarlo; el soporte está implementado
+> según la documentación de Ollama/ROCm pero **falta confirmarlo en una Radeon real**. Si lo
+> pruebas, dime qué tal y lo marco como verificado.
+
+El tutor usa la GPU para dos cosas, y **AMD no sirve igual para ambas**:
+
+- **LLM (Ollama):** sí puede usar la Radeon vía **ROCm**. La detección de hardware (Ajustes →
+  *Tu sistema*) ahora reconoce AMD/Intel además de NVIDIA, muestra su **nombre y VRAM**, y usa esa
+  VRAM para recomendar el modelo (una RX 6600 de 8 GB → recomienda **`qwen2.5:7b`**).
+- **Whisper (voz→texto):** la librería (`faster-whisper`/`ctranslate2`) es **solo CUDA/NVIDIA**, así
+  que en AMD **siempre va por CPU**. Por eso en Ajustes el dispositivo de Ollama y el de Whisper son
+  **independientes**: en una AMD puedes poner Ollama en GPU y Whisper queda en CPU (no hay otra).
+
+**Override de ROCm (automático):** la RX 6600 es `gfx1032`, que **no** está en la lista oficial de
+ROCm de Ollama. El instalador detecta una AMD RDNA2 (serie RX 6000) y fija de forma persistente:
+
+```
+HSA_OVERRIDE_GFX_VERSION = 10.3.0
+```
+
+con lo que Ollama la trata como una `gfx1030` soportada y la usa. (Las RX 7000 ya van nativas; no
+necesitan override. En Linux hace falta tener **ROCm instalado** en el sistema; en Windows lo trae
+el propio Ollama.)
+
+**Si tras instalar Ollama sigue yendo por CPU:**
+1. Cierra Ollama y vuelve a abrirlo (o **reinicia una vez**): la variable se aplica al **arrancar** el
+   servidor, así que si ya estaba abierto no la toma hasta reiniciarlo.
+2. Comprueba con:
+   ```powershell
+   ollama ps      # debe indicar 100% GPU; si dice CPU, no la está usando
+   ```
+3. Si tu Radeon **no** es de la serie RX 6000, puede necesitar otro valor de
+   `HSA_OVERRIDE_GFX_VERSION` (búscalo para tu modelo) o no estar soportada por ROCm.
+

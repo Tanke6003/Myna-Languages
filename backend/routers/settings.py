@@ -16,28 +16,126 @@ router = APIRouter(tags=["settings"])
 
 
 # --- Detección de hardware / catálogo de modelos ---
-def _gpu_name():
+# Fabricantes PCI relevantes para GPU (campo VEN_xxxx del ID del dispositivo).
+_GPU_VENDORS = {"10de": "nvidia", "1002": "amd", "8086": "intel"}
+
+
+def _nvidia_smi_gpus():
+    """GPUs NVIDIA vía nvidia-smi: [{name, vendor, vram_gb}, ...]. Vacío si no hay NVIDIA.
+    Es la fuente más fiable de nombre y VRAM para NVIDIA."""
     try:
-        import subprocess
-        out = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-                             capture_output=True, text=True, timeout=4)
-        lines = [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
-        return lines[0] if lines else ""
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=4)
+        gpus = []
+        for ln in out.stdout.splitlines():
+            parts = [p.strip() for p in ln.split(",")]
+            if len(parts) >= 2 and parts[1].isdigit():
+                gpus.append({"name": parts[0], "vendor": "nvidia",
+                             "vram_gb": round(int(parts[1]) / 1024, 1)})  # MB -> GB
+        return gpus
     except Exception:
-        return ""
+        return []
 
 
-def _gpu_vram_gb():
+def _vram_bytes(v):
+    """qwMemorySize del registro puede venir como entero (REG_QWORD) o bytes (REG_BINARY)."""
+    if isinstance(v, int):
+        return v
+    if isinstance(v, (bytes, bytearray)):
+        return int.from_bytes(v, "little")
+    return 0
+
+
+def _gpus_windows():
+    """GPUs vía el registro de Windows (clase 'Display'): nombre, fabricante (VEN_xxxx) y
+    VRAM real en GB. Usa HardwareInformation.qwMemorySize (la VRAM real), NO el AdapterRAM
+    de WMI, que es un DWORD de 32 bits y se topa en ~4 GB."""
+    gpus = []
     try:
-        import subprocess
-        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
-                             capture_output=True, text=True, timeout=4)
-        vals = [int(x.strip()) for x in out.stdout.splitlines() if x.strip().isdigit()]
-        if vals:
-            return round(max(vals) / 1024, 1)  # MB -> GB
+        import winreg
+        base = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc8-08002be10318}"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base) as cls:
+            i = 0
+            while True:
+                try:
+                    sub = winreg.EnumKey(cls, i)
+                except OSError:
+                    break
+                i += 1
+                if not sub.isdigit():            # 0000, 0001... (ignora "Properties", etc.)
+                    continue
+                try:
+                    with winreg.OpenKey(cls, sub) as k:
+                        def _val(name):
+                            try:
+                                return winreg.QueryValueEx(k, name)[0]
+                            except OSError:
+                                return None
+                        match = str(_val("MatchingDeviceId") or "").upper()
+                        m = re.search(r"VEN_([0-9A-F]{4})", match)
+                        if not m:                # sin VEN_ no es PCI (Basic Render, RDP...)
+                            continue
+                        vendor = _GPU_VENDORS.get(m.group(1).lower(), "other")
+                        vram = round(_vram_bytes(_val("HardwareInformation.qwMemorySize")) / (1024 ** 3), 1)
+                        gpus.append({"name": str(_val("DriverDesc") or "").strip(),
+                                     "vendor": vendor, "vram_gb": vram})
+                except OSError:
+                    continue
     except Exception:
         pass
-    return 0
+    return gpus
+
+
+def _gpus_linux():
+    """GPUs vía sysfs: fabricante y (en AMD) VRAM. Nombre best-effort con lspci."""
+    import glob
+    names = {}
+    try:                                          # mapa 'bus PCI -> nombre' desde lspci, si está
+        out = subprocess.run(["lspci", "-D"], capture_output=True, text=True, timeout=4)
+        for ln in out.stdout.splitlines():
+            if re.search(r"VGA|3D|Display", ln):
+                bus, _, desc = ln.partition(" ")
+                names[bus] = desc.split(":", 1)[-1].strip()
+    except Exception:
+        pass
+    gpus = []
+    for dev in glob.glob("/sys/class/drm/card[0-9]*/device"):
+        try:
+            with open(os.path.join(dev, "vendor")) as f:
+                vid = f.read().strip().lower().replace("0x", "")
+            vendor = _GPU_VENDORS.get(vid, "other")
+            vram = 0
+            mem = os.path.join(dev, "mem_info_vram_total")     # lo expone el driver AMD
+            if os.path.exists(mem):
+                with open(mem) as f:
+                    vram = round(int(f.read().strip()) / (1024 ** 3), 1)
+            bus = os.path.basename(os.path.realpath(dev))
+            gpus.append({"name": names.get(bus, vendor.upper() + " GPU"),
+                         "vendor": vendor, "vram_gb": vram})
+        except Exception:
+            continue
+    return gpus
+
+
+def _detect_gpus():
+    """Todas las GPUs (NVIDIA/AMD/Intel) con fabricante y VRAM. Multiplataforma, best-effort.
+    nvidia-smi manda para NVIDIA (nombre y VRAM más fiables que el registro/sysfs)."""
+    gpus = _gpus_windows() if platform.system() == "Windows" else _gpus_linux()
+    smi = _nvidia_smi_gpus()
+    if smi:
+        gpus = [g for g in gpus if g["vendor"] != "nvidia"] + smi
+    return gpus
+
+
+def _best_gpu(gpus):
+    """La GPU 'principal' para acelerar: la usable (NVIDIA/AMD) con más VRAM. Así, en un
+    equipo con iGPU + tarjeta discreta, se queda con la discreta (más VRAM)."""
+    usable = [g for g in gpus if g["vendor"] in ("nvidia", "amd")]
+    if not usable:
+        return None
+    rank = {"nvidia": 2, "amd": 1}               # a igual VRAM, prioriza NVIDIA
+    return max(usable, key=lambda g: (g["vram_gb"], rank.get(g["vendor"], 0)))
 
 
 def _cpu_info():
@@ -175,11 +273,13 @@ def _hardware():
         import psutil
         cuda = 0
         try:
-            import ctranslate2
+            import ctranslate2     # solo NVIDIA/CUDA; sirve para saber si Whisper puede ir en GPU
             cuda = ctranslate2.get_cuda_device_count()
         except Exception:
             pass
         cpu_name, cpu_ghz = _cpu_info()
+        gpus = _detect_gpus()
+        best = _best_gpu(gpus)
         _HW_CACHE = {
             "ram_gb": round(psutil.virtual_memory().total / (1024 ** 3), 1),
             "cores": psutil.cpu_count(logical=False) or psutil.cpu_count() or 0,
@@ -187,8 +287,10 @@ def _hardware():
             "cpu_name": cpu_name,
             "cpu_ghz": cpu_ghz,
             "cuda": cuda,
-            "vram": _gpu_vram_gb(),
-            "gpu_name": _gpu_name() if cuda else "",
+            "gpus": gpus,
+            "gpu_name": best["name"] if best else "",
+            "gpu_vendor": best["vendor"] if best else "",
+            "vram": best["vram_gb"] if best else 0,
         }
     return _HW_CACHE
 
@@ -197,9 +299,14 @@ def _hardware():
 def system_info():
     hw = _hardware()
     ram_gb, cores, vram = hw["ram_gb"], hw["cores"], hw["vram"]
-    # Con GPU NVIDIA manda la VRAM. Sin ella, el límite real lo pone el CPU (núcleos+GHz),
-    # acotado además por la RAM disponible.
-    if vram > 0:
+    vendor = hw["gpu_vendor"]
+    nvidia = vendor == "nvidia" or hw["cuda"] > 0
+    amd = any(g["vendor"] == "amd" for g in hw["gpus"])
+    # El LLM (Ollama) puede usar GPU NVIDIA o AMD (vía ROCm). Whisper SOLO NVIDIA/CUDA.
+    gpu_available = nvidia or amd
+    # Con una GPU usable (NVIDIA o AMD) y VRAM conocida, manda su VRAM. Sin ella (solo CPU,
+    # o AMD sin VRAM detectada), el límite lo pone el CPU (núcleos+GHz), acotado por la RAM.
+    if vram > 0 and vendor in ("nvidia", "amd"):
         budget = vram - 2
     else:
         budget = min(max(ram_gb - 4, 2), _cpu_cap_gb(cores, hw["cpu_ghz"]))
@@ -219,8 +326,11 @@ def system_info():
         "cpu_threads": hw["threads"],
         "cpu_name": hw["cpu_name"],
         "cpu_ghz": hw["cpu_ghz"],
-        "gpu": {"nvidia": hw["cuda"] > 0, "count": hw["cuda"], "name": hw["gpu_name"]},
+        "gpu": {"nvidia": nvidia, "amd": amd, "vendor": vendor,
+                "count": hw["cuda"], "name": hw["gpu_name"]},
         "whisper_device": stt.active_device(),
+        "whisper_device_pref": runtime.get_whisper_device(),
+        "whisper_gpu_available": hw["cuda"] > 0,   # ctranslate2 es solo NVIDIA
         "whisper_model": stt.current_model_name(),
         "whisper_sizes": stt.WHISPER_SIZES,
         "current_model": runtime.get_model(),
@@ -228,7 +338,7 @@ def system_info():
         "recommended_model": recommended,
         "model_catalog": catalog,
         "llm_device": runtime.get_device(),
-        "gpu_available": hw["cuda"] > 0,
+        "gpu_available": gpu_available,
         "tts_voice": runtime.get_voice(),
         "tts_voices": VOICE_CATALOG,
     }
@@ -267,6 +377,13 @@ def set_whisper_model(body: dict = Body(...)):
         raise HTTPException(400, "Falta el modelo de Whisper.")
     stt.set_model_name(name)
     return {"whisper_model": stt.current_model_name()}
+
+
+@router.post("/settings/whisper-device")
+def set_whisper_device(body: dict = Body(...)):
+    """Dispositivo de Whisper: 'gpu' (CUDA si hay NVIDIA) o 'cpu'. Independiente del LLM."""
+    stt.set_device(body.get("device", "gpu"))
+    return {"whisper_device_pref": runtime.get_whisper_device()}
 
 
 @router.post("/settings/pull")

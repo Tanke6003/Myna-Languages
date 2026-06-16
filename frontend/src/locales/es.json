@@ -212,6 +212,7 @@
   "settings.device": "Dispositivo",
   "settings.deviceHint": "GPU es más rápido; usa CPU si la GPU da problemas.",
   "settings.noGpu": "No se detectó GPU; se usará la CPU.",
+  "settings.whisperCpuOnly": "Whisper solo se acelera con NVIDIA (CUDA); en tu equipo irá por CPU.",
   "settings.catalog": "Modelos para tu equipo",
   "settings.catalogHint": "Mostramos lo que cabe en tu equipo (~{budget} GB). Más grande = mejor; lo atenuado no cabe.",
   "settings.install": "Descargar y usar",

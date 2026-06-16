@@ -5,14 +5,20 @@ la elección sobrevive a reinicios y es coherente con el instalador.
 """
 import os
 
-from config import OLLAMA_MODEL, BASE_DIR, TTS_VOICE
+from config import OLLAMA_MODEL, BASE_DIR, TTS_VOICE, WHISPER_DEVICE
+
+# Por defecto de Whisper si el usuario no ha elegido en Ajustes: respeta TUTOR_WHISPER_DEVICE
+# ('cpu' fuerza CPU; 'auto'/'cuda'/'gpu' -> 'gpu', es decir CUDA si hay NVIDIA).
+_WHISPER_DEVICE_DEFAULT = "cpu" if str(WHISPER_DEVICE).strip().lower() == "cpu" else "gpu"
 
 _MODEL_FILE = os.path.join(BASE_DIR, "selected_model.txt")
 _DEVICE_FILE = os.path.join(BASE_DIR, "selected_device.txt")
+_WHISPER_DEVICE_FILE = os.path.join(BASE_DIR, "selected_whisper_device.txt")
 _VOICE_FILE = os.path.join(BASE_DIR, "selected_voice.txt")
 _current = None
-_device = None  # "gpu" (Ollama usa GPU si puede) o "cpu" (fuerza CPU)
-_voice = None   # voz TTS inglesa que habla al usuario (configurable en Ajustes)
+_device = None          # LLM (Ollama): "gpu" (usa GPU si puede) o "cpu" (fuerza CPU)
+_whisper_device = None  # Whisper (STT): "gpu" (CUDA si hay NVIDIA) o "cpu" (fuerza CPU)
+_voice = None           # voz TTS inglesa que habla al usuario (configurable en Ajustes)
 
 
 def _load():
@@ -63,6 +69,32 @@ def set_device(d):
     except Exception as e:
         print(f"[runtime] No pude guardar el dispositivo: {e}")
     return _device
+
+
+def get_whisper_device():
+    """Dispositivo de Whisper: 'gpu' (por defecto; usa CUDA si hay NVIDIA) o 'cpu' (forzado).
+
+    OJO: faster-whisper (ctranslate2) SOLO acelera con CUDA/NVIDIA. En una GPU AMD/Intel,
+    'gpu' acaba cayendo a CPU igualmente (lo resuelve services.stt)."""
+    global _whisper_device
+    if _whisper_device is None:
+        try:
+            with open(_WHISPER_DEVICE_FILE, "r", encoding="utf-8-sig") as f:
+                _whisper_device = f.read().strip().lower()
+        except Exception:
+            _whisper_device = _WHISPER_DEVICE_DEFAULT
+    return _whisper_device if _whisper_device in ("gpu", "cpu") else _WHISPER_DEVICE_DEFAULT
+
+
+def set_whisper_device(d):
+    global _whisper_device
+    _whisper_device = "cpu" if str(d).strip().lower() == "cpu" else "gpu"
+    try:
+        with open(_WHISPER_DEVICE_FILE, "w", encoding="utf-8") as f:
+            f.write(_whisper_device)
+    except Exception as e:
+        print(f"[runtime] No pude guardar el dispositivo de Whisper: {e}")
+    return _whisper_device
 
 
 def get_voice():

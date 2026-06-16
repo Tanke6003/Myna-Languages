@@ -12,6 +12,15 @@ fi
 # Modelo elegido por el instalador (se puede cambiar luego en la pestana Ajustes)
 [ -f selected_model.txt ] && export TUTOR_OLLAMA_MODEL="$(cat selected_model.txt)"
 
+# --- GPU AMD RDNA2 (RX 6000 / Navi 2x = gfx103x): no esta en la lista oficial de ROCm de Ollama.
+# Con HSA_OVERRIDE_GFX_VERSION=10.3.0 Ollama puede usarla (requiere ROCm instalado en el sistema).
+# Exportamos ANTES de arrancar 'ollama serve' para que el servidor lo herede. RX 7000 va nativa.
+if [ -z "${HSA_OVERRIDE_GFX_VERSION:-}" ] && command -v lspci >/dev/null 2>&1; then
+  if lspci | grep -Eiq 'Radeon RX 6[0-9]{3}|Navi 2[0-9]'; then
+    export HSA_OVERRIDE_GFX_VERSION=10.3.0
+  fi
+fi
+
 # --- Asegura que Ollama (la IA, local) este corriendo ---
 # Si su API no responde, lo arrancamos en segundo plano y esperamos a que escuche. Evita el
 # fallo de conexion ("connection refused") en el primer turno cuando Ollama aun no esta listo.

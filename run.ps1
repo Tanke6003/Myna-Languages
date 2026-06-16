@@ -27,6 +27,14 @@ function Test-Ollama {
   catch { $false }
 }
 
+# Si la instalacion marco una GPU AMD que necesita override de ROCm (RX 6000 = gfx103x),
+# propaga la variable a ESTA sesion para que el servidor de Ollama que lancemos abajo la herede.
+# (Si Ollama ya estaba abierto sin la variable, toma efecto al reabrirlo o tras reiniciar.)
+if (-not $env:HSA_OVERRIDE_GFX_VERSION) {
+  $hsa = [Environment]::GetEnvironmentVariable('HSA_OVERRIDE_GFX_VERSION', 'User')
+  if ($hsa) { $env:HSA_OVERRIDE_GFX_VERSION = $hsa }
+}
+
 if (-not (Test-Ollama)) {
   $launched = $false
   # 1) Preferimos la app de Ollama (GUI, SIN consola): arranca el servidor en segundo plano
